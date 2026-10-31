@@ -73,7 +73,7 @@ flowchart TB
   DERIVE --> DB
 
   subgraph web["life-metrics server · Django under gunicorn, launchd, :8xxx"]
-
+    direction LR
     CAT[catalog pages<br/>the UI]
     MCP[MCP endpoint<br/>for Claude and other agents]
   end
@@ -86,10 +86,6 @@ flowchart TB
   web -.-> GRAF
   web -.-> AVUI
 ```
-
-Dashed boxes are jobs that run and exit; solid blue boxes are servers this
-project runs; grey boxes are servers it uses but does not own. Dotted
-arrows are drilldown links from the catalog pages.
 
 Dashed boxes are jobs that run and exit; solid blue boxes are servers this
 project runs; grey boxes are servers it uses but does not own. Dotted

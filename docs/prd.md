@@ -49,13 +49,21 @@ dashboard is not the only way to ask questions.
 ```mermaid
 flowchart TB
   subgraph loaders["loaders (scheduled, idempotent)"]
-    AV[agentsview API/CLI<br/>sessions, tokens, cost]
-    LIM[vendor limits<br/>Claude · Codex · Gemini · OpenRouter]
-    GH[GitHub<br/>commits · issues · PRs]
-    HR[herdr<br/>tabs · sessions]
-    GM[Gmail · Calendar · Tasks<br/>full mailbox, incremental]
-    AH[Apple Health<br/>auto-export push]
-    PH[Photos library<br/>EXIF · places · people]
+    direction TB
+    subgraph p1["phase 1"]
+      direction LR
+      AV[agentsview<br/>sessions · tokens · cost]
+      LIM[vendor limits<br/>Claude · Codex · Gemini · OpenRouter]
+      GH[GitHub<br/>commits · issues · PRs]
+      HR[herdr<br/>tabs · sessions]
+    end
+    subgraph p2["later phases"]
+      direction LR
+      GM[Gmail · Calendar · Tasks<br/>full mailbox, incremental]
+      AH[Apple Health<br/>auto-export push]
+      PH[Photos library<br/>EXIF · places · people]
+    end
+    p1 ~~~ p2
   end
   loaders --> RAW[(SQLite: raw per-source tables)]
   RAW --> D[derived: projects · people · activities · daily rollups]

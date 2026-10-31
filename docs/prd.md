@@ -48,32 +48,52 @@ dashboard is not the only way to ask questions.
 
 ```mermaid
 flowchart TB
-  subgraph loaders["loaders (scheduled, idempotent)"]
-    direction TB
-    subgraph p1["phase 1"]
-      direction LR
-      AV[agentsview<br/>sessions · tokens · cost]
-      LIM[vendor limits<br/>Claude · Codex · Gemini · OpenRouter]
-      GH[GitHub<br/>commits · issues · PRs]
-      HR[herdr<br/>tabs · sessions]
+  classDef job fill:#fff,stroke:#555,stroke-dasharray:5 3
+  classDef server fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+  classDef external fill:#f5f5f5,stroke:#888,stroke-width:2px
+  classDef data fill:#fff8e1,stroke:#f9a825,stroke-width:2px
+
+  subgraph jobs["scheduled jobs · manage.py commands run by launchd, exit when done"]
+    subgraph p2["loaders, later phases"]
+      GM[Gmail · Calendar · Tasks<br/>full mailbox, incremental] ~~~ AH[Apple Health<br/>auto-export push] ~~~ PH[Photos library<br/>EXIF · places · people]
     end
-    subgraph p2["later phases"]
-      direction LR
-      GM[Gmail · Calendar · Tasks<br/>full mailbox, incremental]
-      AH[Apple Health<br/>auto-export push]
-      PH[Photos library<br/>EXIF · places · people]
+    subgraph p1["loaders, phase 1"]
+      AV[agentsview<br/>sessions · tokens · cost] ~~~ LIM[vendor limits<br/>Claude · Codex · Gemini · OpenRouter] ~~~ GH[GitHub<br/>commits · issues · PRs] ~~~ HR[herdr<br/>tabs · sessions]
     end
-    p1 ~~~ p2
+    DERIVE[derive<br/>projects · people · activities · daily rollups]
+    p1 --> DERIVE
+    p2 --> DERIVE
   end
-  loaders --> RAW[(SQLite: raw per-source tables)]
-  RAW --> D[derived: projects · people · activities · daily rollups]
-  D --> CAT[catalog pages :8xxx]
-  D --> GRAF[Grafana :3xxx<br/>own instance]
-  D --> MCP[MCP server]
-  LLM[local LLM via LM Studio<br/>classify · summarize] --> D
-  CAT -.drilldown.-> GRAF
-  CAT -.drilldown.-> AVUI[agentsview UI :8089]
+  class AV,LIM,GH,HR,GM,AH,PH,DERIVE job
+
+  LLM[LM Studio<br/>local LLM server<br/>classify · summarize]:::external
+  DERIVE <--> LLM
+
+  DB[(SQLite<br/>raw per-source tables<br/>+ derived rollups)]:::data
+  DERIVE --> DB
+
+  subgraph web["life-metrics server · Django under gunicorn, launchd, :8xxx"]
+
+    CAT[catalog pages<br/>the UI]
+    MCP[MCP endpoint<br/>for Claude and other agents]
+  end
+  class CAT,MCP server
+  DB --> web
+
+  GRAF[Grafana :3xxx<br/>own instance, provisioned dashboards]:::server
+  AVUI[agentsview UI :8089]:::external
+  DB --> GRAF
+  web -.-> GRAF
+  web -.-> AVUI
 ```
+
+Dashed boxes are jobs that run and exit; solid blue boxes are servers this
+project runs; grey boxes are servers it uses but does not own. Dotted
+arrows are drilldown links from the catalog pages.
+
+Dashed boxes are jobs that run and exit; solid blue boxes are servers this
+project runs; grey boxes are servers it uses but does not own. Dotted
+arrows are drilldown links from the catalog pages.
 
 ### Principles
 

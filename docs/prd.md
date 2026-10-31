@@ -259,8 +259,8 @@ list.
 - Borrow the MCP-server idea from Edi Life OS, not its stack.
 
 [agentsview]: https://github.com/agentsview
-[luc]: ../../../llm-use-charts
-[homepower]: ../../../homepower
+[luc]: ../../llm-use-charts
+[homepower]: ../../homepower
 [dogsheep]: https://dogsheep.github.io/
 [pdw]: https://simonwillison.net/2020/Nov/14/personal-data-warehouses/
 [hpi]: https://github.com/karlicoss/HPI

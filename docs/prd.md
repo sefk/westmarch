@@ -47,7 +47,7 @@ an MCP server exposes the same data to Claude and other agents so the
 dashboard is not the only way to ask questions.
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph loaders["loaders (scheduled, idempotent)"]
     AV[agentsview API/CLI<br/>sessions, tokens, cost]
     LIM[vendor limits<br/>Claude · Codex · Gemini · OpenRouter]

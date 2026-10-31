@@ -53,24 +53,29 @@ flowchart TB
   classDef external fill:#f5f5f5,stroke:#888,stroke-width:2px
   classDef data fill:#fff8e1,stroke:#f9a825,stroke-width:2px
 
-  subgraph jobs["scheduled jobs · manage.py commands run by launchd, exit when done"]
-    subgraph p2["loaders, later phases"]
-      GM[Gmail · Calendar · Tasks<br/>full mailbox, incremental] ~~~ AH[Apple Health<br/>auto-export push] ~~~ PH[Photos library<br/>EXIF · places · people]
+  subgraph jobs["loader jobs · one manage.py command per source, run by launchd, exits when done"]
+    subgraph p1["phase 1"]
+      AV[agentsview<br/>sessions · tokens · cost]
+      LIM[vendor limits<br/>Claude · Codex · Gemini · OpenRouter]
+      GH[GitHub<br/>commits · issues · PRs]
+      HR[herdr<br/>tabs · sessions]
     end
-    subgraph p1["loaders, phase 1"]
-      AV[agentsview<br/>sessions · tokens · cost] ~~~ LIM[vendor limits<br/>Claude · Codex · Gemini · OpenRouter] ~~~ GH[GitHub<br/>commits · issues · PRs] ~~~ HR[herdr<br/>tabs · sessions]
+    subgraph p2["phase 2"]
+      GM[Gmail · Calendar · Tasks<br/>full mailbox, incremental]
+      AH[Apple Health<br/>auto-export push]
+      PH[Photos library<br/>EXIF · places · people]
     end
-    DERIVE[derive<br/>projects · people · activities · daily rollups]
-    p1 --> DERIVE
-    p2 --> DERIVE
+    AV ~~~ GM
   end
-  class AV,LIM,GH,HR,GM,AH,PH,DERIVE job
+  class AV,LIM,GH,HR,GM,AH,PH job
+
+  DB[(SQLite<br/>raw rows per source<br/>+ derived rollups)]:::data
+  jobs --> DB
 
   LLM[LM Studio<br/>local LLM server<br/>classify · summarize]:::external
-  DERIVE <--> LLM
-
-  DB[(SQLite<br/>raw per-source tables<br/>+ derived rollups)]:::data
-  DERIVE --> DB
+  DERIVE[derive job<br/>scheduled after the loaders<br/>reads raw tables, rebuilds rollups:<br/>projects · people · activities · daily]:::job
+  LLM <--> DERIVE
+  DERIVE <--> DB
 
   subgraph web["life-metrics server · Django under gunicorn, launchd, :8xxx"]
     direction LR
@@ -122,7 +127,8 @@ Sketched now, filled in over time:
 | Tab | Covers | Phase |
 |-----|--------|-------|
 | Work | Peninsula School board, datatalk; AI tool usage and subscriptions | 1 |
-| Personal projects | Home stuff; technical things (backups, this, homepower) | 1 (coding projects only) |
+| Tech | Technical things: backups, this, homepower, the local server fleet | 1 |
+| Projects | Home stuff: improvements, contractors, spending, milestones | 2 |
 | Health | Physical: gym, outdoor time, Apple telemetry. Intellectual: books read | 2 |
 | Social | Keeping up with my network of friends (email, calendar, photos) | 3 |
 | Fun | Poker (WRGPT), games, trips | 3 |

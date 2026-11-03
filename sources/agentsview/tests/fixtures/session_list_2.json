@@ -1,0 +1,40 @@
+{
+ "sessions": [
+  {
+   "web_url": "http://127.0.0.1:8089/sessions/pi/94639ae9-6c5f-be5d-4d9f-fef5a9a72ac7",
+   "id": "pi:94639ae9-6c5f-be5d-4d9f-fef5a9a72ac7",
+   "project": "lmstudio_other",
+   "machine": "f4149498bb519d30ce177bb68229c487",
+   "agent": "pi",
+   "first_message": "(scrubbed)",
+   "started_at": "2026-10-23T21:35:26Z",
+   "ended_at": "2026-10-23T22:03:05Z",
+   "message_count": 427,
+   "user_message_count": 0,
+   "total_output_tokens": 36994,
+   "peak_context_tokens": 416,
+   "has_total_output_tokens": true,
+   "has_peak_context_tokens": true,
+   "is_automated": false,
+   "tool_failure_signal_count": 0,
+   "tool_retry_count": 0,
+   "edit_churn_count": 0,
+   "consecutive_failure_max": 0,
+   "outcome": "completed",
+   "outcome_confidence": "medium",
+   "ended_with_role": "assistant",
+   "final_failure_streak": 0,
+   "compaction_count": 1,
+   "mid_task_compaction_count": 0,
+   "health_score": 100,
+   "health_grade": "A",
+   "secret_leak_count": 0,
+   "cwd": "/Users/sefk/lmstudio/lmstudio-other",
+   "project_assigned": false,
+   "transcript_revision": "1",
+   "created_at": "2026-10-24T10:45:18.988Z"
+  }
+ ],
+ "next_cursor": null,
+ "total": 3
+}

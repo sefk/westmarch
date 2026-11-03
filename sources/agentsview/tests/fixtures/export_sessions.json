@@ -1,0 +1,228 @@
+{
+ "schema_version": 6,
+ "cursor": {
+  "next": null
+ },
+ "sessions": [
+  {
+   "id": "b4c1e531-d36f-4128-8242-fefcffd7fc76",
+   "transcript_revision": "268",
+   "local_modified_at": "2026-11-02T00:04:51.322Z",
+   "project": {
+    "project_key": "pl1:sha256:172bc78f72ad505600e6aed8a4b33bf3dcd998c12b5dc184ba2a06d3467ac85f",
+    "display_label": "datatalk",
+    "resolution": "resolved",
+    "identity": {
+     "key": "p1:sha256:37c9717334518402d31182edacef1375ecea6027c8cddedd5b8da2d97ba4bb1a",
+     "kind": "git_remote",
+     "normalized_remote": "github.com/biglocalnews/datatalk",
+     "root_key": "r1:sha256:34e4a1b7848d90e490bc7569a015d4868d91468a6fb8d8516aafb55b5580d2e2",
+     "repository_key": "repo1:sha256:ade5272da43cb270818704522794b8d6dee2bd96dd5f017d8b5274b1dd39b700"
+    },
+    "worktree": {
+     "relationship": "main_worktree",
+     "worktree_key": "wt1:sha256:f4388842a0882cbaff5ed53775135df43a6182be84159b5c5ca0abb5ddd83020",
+     "repository_key": "repo1:sha256:ade5272da43cb270818704522794b8d6dee2bd96dd5f017d8b5274b1dd39b700"
+    },
+    "checkout": {
+     "state": "branch",
+     "branch": "main"
+    }
+   },
+   "agent": "claude",
+   "started_at": "2026-10-30T21:16:35.698Z",
+   "ended_at": "2026-10-31T18:35:29.004Z",
+   "last_activity_at": "2026-10-31T18:35:29.004Z",
+   "duration_seconds": 76733,
+   "message_count": 301,
+   "user_message_count": 18,
+   "assistant_message_count": 271,
+   "turn_count": 18,
+   "classification": "interactive",
+   "is_automated": false,
+   "model_usage": {
+    "models": [
+     "claude-opus-5-5",
+     "claude-sonnet-5-5"
+    ],
+    "input_tokens": 512,
+    "output_tokens": 146584,
+    "cache_creation_input_tokens": 615008,
+    "cache_read_input_tokens": 36949313,
+    "reasoning_tokens": 0,
+    "cost": {
+     "microdollars": 8870801
+    },
+    "has_cost": true,
+    "by_model": {
+     "claude-sonnet-5-5": {
+      "model": "claude-sonnet-5-5",
+      "input_tokens": 388,
+      "output_tokens": 123600,
+      "cache_creation_input_tokens": 503783,
+      "cache_read_input_tokens": 31209550,
+      "reasoning_tokens": 0,
+      "cost": {
+       "microdollars": 6372867
+      },
+      "has_cost": true,
+      "cost_source": "computed"
+     },
+     "claude-opus-5-5": {
+      "model": "claude-opus-5-5",
+      "input_tokens": 124,
+      "output_tokens": 22984,
+      "cache_creation_input_tokens": 111225,
+      "cache_read_input_tokens": 5739763,
+      "reasoning_tokens": 0,
+      "cost": {
+       "microdollars": 2497934
+      },
+      "has_cost": true,
+      "cost_source": "computed"
+     }
+    }
+   },
+   "parent_session_id": null,
+   "relationship_type": null,
+   "total_output_tokens": 168405,
+   "peak_context_tokens": 319996,
+   "has_total_output_tokens": true,
+   "has_peak_context_tokens": true
+  },
+  {
+   "id": "agent-a12a20aa8ce56a0f8",
+   "transcript_revision": "44",
+   "local_modified_at": "2026-10-31T16:35:24.945Z",
+   "project": {
+    "project_key": "pl1:sha256:172bc78f72ad505600e6aed8a4b33bf3dcd998c12b5dc184ba2a06d3467ac85f",
+    "display_label": "datatalk",
+    "resolution": "resolved",
+    "identity": {
+     "key": "p1:sha256:37c9717334518402d31182edacef1375ecea6027c8cddedd5b8da2d97ba4bb1a",
+     "kind": "git_remote",
+     "normalized_remote": "github.com/biglocalnews/datatalk",
+     "root_key": "r1:sha256:34e4a1b7848d90e490bc7569a015d4868d91468a6fb8d8516aafb55b5580d2e2",
+     "repository_key": "repo1:sha256:ade5272da43cb270818704522794b8d6dee2bd96dd5f017d8b5274b1dd39b700"
+    },
+    "worktree": {
+     "relationship": "main_worktree",
+     "worktree_key": "wt1:sha256:f4388842a0882cbaff5ed53775135df43a6182be84159b5c5ca0abb5ddd83020",
+     "repository_key": "repo1:sha256:ade5272da43cb270818704522794b8d6dee2bd96dd5f017d8b5274b1dd39b700"
+    },
+    "checkout": {
+     "state": "branch",
+     "branch": "main"
+    }
+   },
+   "agent": "claude",
+   "started_at": "2026-10-31T15:52:16.615Z",
+   "ended_at": "2026-10-31T16:21:17.807Z",
+   "last_activity_at": "2026-10-31T16:21:17.807Z",
+   "duration_seconds": 1741,
+   "message_count": 40,
+   "user_message_count": 1,
+   "assistant_message_count": 39,
+   "turn_count": 1,
+   "classification": "interactive",
+   "is_automated": false,
+   "model_usage": {
+    "models": [
+     "claude-fable-5-1"
+    ],
+    "input_tokens": 1199,
+    "output_tokens": 41437,
+    "cache_creation_input_tokens": 286523,
+    "cache_read_input_tokens": 3979535,
+    "reasoning_tokens": 0,
+    "cost": {
+     "microdollars": 6660268
+    },
+    "has_cost": true,
+    "by_model": {
+     "claude-fable-5-1": {
+      "model": "claude-fable-5-1",
+      "input_tokens": 1199,
+      "output_tokens": 41437,
+      "cache_creation_input_tokens": 286523,
+      "cache_read_input_tokens": 3979535,
+      "reasoning_tokens": 0,
+      "cost": {
+       "microdollars": 6660268
+      },
+      "has_cost": true,
+      "cost_source": "computed"
+     }
+    }
+   },
+   "parent_session_id": "b4c1e531-d36f-4128-8242-fefcffd7fc76",
+   "relationship_type": "subagent",
+   "total_output_tokens": 41437,
+   "peak_context_tokens": 152167,
+   "has_total_output_tokens": true,
+   "has_peak_context_tokens": true
+  },
+  {
+   "id": "pi:94639ae9-6c5f-be5d-4d9f-fef5a9a72ac7",
+   "transcript_revision": "1",
+   "local_modified_at": "2026-11-02T11:45:22.219Z",
+   "project": {
+    "project_key": "pl1:sha256:0df1b13c09a2482c6579d351ee564e4200fefc704240f4b9677b393862843f56",
+    "display_label": "lmstudio_other",
+    "resolution": "unknown",
+    "worktree": {
+     "relationship": "unknown"
+    },
+    "checkout": {
+     "state": "unknown"
+    }
+   },
+   "agent": "pi",
+   "started_at": "2026-10-23T21:35:26Z",
+   "ended_at": "2026-10-23T22:03:05Z",
+   "last_activity_at": "2026-10-23T22:03:05Z",
+   "duration_seconds": 1659,
+   "message_count": 427,
+   "user_message_count": 0,
+   "assistant_message_count": 427,
+   "turn_count": 0,
+   "classification": "interactive",
+   "is_automated": false,
+   "model_usage": {
+    "models": [
+     "qwen/qwen3.6-35b-a3b"
+    ],
+    "input_tokens": 162397,
+    "output_tokens": 36994,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "reasoning_tokens": 0,
+    "cost": {
+     "microdollars": 0
+    },
+    "has_cost": false,
+    "by_model": {
+     "qwen/qwen3.6-35b-a3b": {
+      "model": "qwen/qwen3.6-35b-a3b",
+      "input_tokens": 162397,
+      "output_tokens": 36994,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "reasoning_tokens": 0,
+      "cost": {
+       "microdollars": 0
+      },
+      "has_cost": false,
+      "cost_source": "computed"
+     }
+    }
+   },
+   "parent_session_id": null,
+   "relationship_type": null,
+   "total_output_tokens": 36994,
+   "peak_context_tokens": 416,
+   "has_total_output_tokens": true,
+   "has_peak_context_tokens": true
+  }
+ ]
+}

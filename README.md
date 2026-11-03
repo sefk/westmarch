@@ -30,7 +30,7 @@ uv run manage.py load --all --full # ignore incremental cursors, reload everythi
 |--------|--------|---------|
 | projects | git checkouts under `~/src` plus friendly names from local-redirector | daily |
 | gitlocal | commits in those checkouts | daily |
-| agentsview | AI coding sessions, tokens, cost via agentsview's API | hourly |
+| agentsview | AI coding sessions, per-model tokens and cost, via the agentsview CLI (`export sessions` + `session list`); subagents are their own rows | hourly |
 | claude_limits | Claude subscription rate-limit usage | hourly |
 | github | commits, issues, PRs for my repos | daily |
 | herdr | herdr workspaces, tabs and focus events | hourly |

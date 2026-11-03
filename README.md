@@ -41,6 +41,39 @@ Each loader lives in `sources/<name>/` with its own models, migrations and
 tests. The framework (`core/loaders.py`) records every run in
 `LoaderRun` and keeps incremental cursors in `LoaderState`.
 
+## Running locally
+
+```sh
+DJANGO_DEBUG=true uv run manage.py runserver 8520
+```
+
+## Deployment (always-on Mac)
+
+Three system LaunchDaemons, rendered from `ops/launchd/*.plist.in` and run
+as this user so they start at boot with nobody logged in:
+
+| job | does | when |
+|-----|------|------|
+| `com.sefk.life-metrics.web` | gunicorn on `:8520` (`LIFE_PORT`) | always, restarted on crash |
+| `com.sefk.life-metrics.load-hourly` | `bin/load hourly`: the hourly loaders | every hour |
+| `com.sefk.life-metrics.load-daily` | `bin/load daily`: the daily loaders, then a full agentsview reload | 04:15 |
+
+```sh
+bin/install-launchd     # render and load the three jobs (sudo)
+bin/deploy              # uv sync, tests, migrate, restart web, wait for /health/
+bin/status              # job state, web check, log tails, last run of every loader
+bin/uninstall-launchd   # sudo
+```
+
+Logs land in `var/log/`. A loader job ends with a `LOAD hourly OK` or
+`LOAD hourly FAILED` line. The loader jobs need no restart on deploy:
+launchd starts a fresh process each tick.
+
+Caveat: the Claude limits loader reads the Claude Code token from the
+login Keychain. Under a system daemon that works while you are logged in
+to the Mac; if the Keychain is locked the loader records itself disabled
+for that run and tries again next hour.
+
 ## Tests
 
 ```sh

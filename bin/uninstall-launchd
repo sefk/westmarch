@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Unload and remove the system LaunchDaemons. Needs sudo.
+set -euo pipefail
+. "$(dirname "$0")/_common.sh"
+for label in "${LABELS[@]}"; do
+  sudo launchctl bootout "$SYS/$label" 2>/dev/null || true
+  sudo rm -f "$DAEMONS_DIR/$label.plist"
+  echo "removed $label"
+done

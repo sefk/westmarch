@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Run the loaders for one cadence; what the loader LaunchDaemons execute.
+#
+#   bin/load hourly    every loader whose cadence is hourly
+#   bin/load daily     the daily loaders, then a full agentsview reload
+#                      (sessions that arrive late with old timestamps only
+#                      show up on a --full run; it takes ~7 s)
+#
+# Prints one `LOAD <cadence> OK|FAILED` line at the end so bin/status and
+# the logs have something to grep for.
+set -uo pipefail
+. "$(dirname "$0")/_common.sh"
+cd "$ROOT"
+load_env
+cadence="${1:-}"
+case "$cadence" in
+  hourly) cmds=("load --all --cadence hourly") ;;
+  daily)  cmds=("load --all --cadence daily" "load agentsview --full") ;;
+  *) echo "usage: bin/load hourly|daily" >&2; exit 2 ;;
+esac
+status=0
+echo "$(date '+%Y-%m-%d %H:%M:%S') LOAD $cadence start"
+for c in "${cmds[@]}"; do
+  # shellcheck disable=SC2086
+  "$UV" run --no-sync manage.py $c || status=$?
+done
+if [ "$status" = 0 ]; then
+  echo "$(date '+%Y-%m-%d %H:%M:%S') LOAD $cadence OK"
+else
+  echo "$(date '+%Y-%m-%d %H:%M:%S') LOAD $cadence FAILED (exit $status)" | tee /dev/stderr
+fi
+exit "$status"

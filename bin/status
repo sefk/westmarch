@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Summarize the launchd jobs, the web endpoint, recent logs, and the
+# last run of every loader.
+set -uo pipefail
+. "$(dirname "$0")/_common.sh"
+cd "$ROOT"
+load_env
+for label in "${LABELS[@]}"; do
+  echo "== $label"
+  if out="$(launchctl print "$SYS/$label" 2>&1)"; then
+    echo "$out" | grep -E '^\s*(state|pid|runs|last exit code|run interval) ' || true
+  else
+    echo "not loaded (bin/install-launchd)"
+  fi
+done
+echo; echo "== web :$PORT"
+curl -fs -m 3 "http://localhost:$PORT/health/" && echo || echo "not answering"
+for f in web.err load-hourly.out load-daily.out; do
+  echo; echo "== $f.log (last 6)"
+  tail -n 6 "$LOG_DIR/$f.log" 2>/dev/null || echo "(no log)"
+done
+echo; echo "== loaders"
+"$UV" run --no-sync manage.py load

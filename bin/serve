@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Run the web app under gunicorn; what the web LaunchDaemon executes.
+# In development prefer: DJANGO_DEBUG=true uv run manage.py runserver
+set -euo pipefail
+. "$(dirname "$0")/_common.sh"
+cd "$ROOT"
+load_env
+exec "$UV" run --no-sync gunicorn lifemetrics.wsgi:application \
+  --bind "${LIFE_HOST:-0.0.0.0}:$PORT" --workers 2 --timeout 60 \
+  --access-logfile - --error-logfile -

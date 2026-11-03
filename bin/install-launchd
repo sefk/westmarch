@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Render ops/launchd/*.plist.in and install them as system LaunchDaemons
+# that run as this user, so they start at boot with nobody logged in.
+# Needs sudo. Re-running replaces the loaded jobs.
+#
+#   PLIST_DEST=/some/dir bin/install-launchd   only render, don't install
+set -euo pipefail
+. "$(dirname "$0")/_common.sh"
+cd "$ROOT"
+ensure_env
+user_name="$(id -un)"; group_name="$(id -gn)"
+for label in "${LABELS[@]}"; do
+  tpl="$ROOT/ops/launchd/$label.plist.in"
+  if [ -n "${PLIST_DEST:-}" ]; then dest="$PLIST_DEST/$label.plist"; else dest="$(mktemp)"; fi
+  sed -e "s|@ROOT@|$ROOT|g" -e "s|@HOME@|$HOME|g" -e "s|@LOG_DIR@|$LOG_DIR|g" \
+      -e "s|@USER@|$user_name|g" -e "s|@GROUP@|$group_name|g" "$tpl" > "$dest"
+  plutil -lint "$dest" >/dev/null
+  [ -n "${PLIST_DEST:-}" ] && { echo "rendered $dest"; continue; }
+  sudo launchctl bootout "$SYS/$label" 2>/dev/null || true
+  sudo install -o root -g wheel -m 644 "$dest" "$DAEMONS_DIR/$label.plist"
+  rm -f "$dest"
+  # bootout is asynchronous; bootstrap fails with "5: Input/output error" until it finishes.
+  for attempt in 1 2 3 4 5; do
+    sudo launchctl bootstrap "$SYS" "$DAEMONS_DIR/$label.plist" 2>/dev/null && break
+    [ "$attempt" = 5 ] && { echo "bootstrap failed for $label" >&2; exit 1; }
+    sleep 1
+  done
+  echo "loaded $label"
+done

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Deploy the working tree to the live services: sync deps, test, migrate,
+# restart the web daemon, and wait until it answers. Run from anywhere.
+#
+#   bin/deploy            sync, tests, migrate, restart web
+#   bin/deploy --no-test  skip the test suite
+#
+# The loader jobs need no restart: launchd starts a fresh process each
+# run, so they pick up new code on their next tick. The web job is a
+# system LaunchDaemon, so restarting it needs sudo; you'll be prompted.
+# If the daemons aren't installed yet this still syncs, tests and
+# migrates, then tells you to run bin/install-launchd.
+set -euo pipefail
+. "$(dirname "$0")/_common.sh"
+cd "$ROOT"
+load_env
+
+run_tests=1
+for arg in "$@"; do
+  case "$arg" in
+    --no-test) run_tests=0 ;;
+    -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option: $arg" >&2; exit 2 ;;
+  esac
+done
+
+if [[ -n "$(git status --porcelain)" ]]; then
+  echo "warning: uncommitted changes; deploying the working tree as it is" >&2
+fi
+
+ensure_env
+echo "==> uv sync"
+"$UV" sync -q
+
+if (( run_tests )); then
+  echo "==> tests"
+  "$UV" run --no-sync pytest -q
+fi
+
+echo "==> migrate"
+"$UV" run --no-sync manage.py migrate --noinput
+
+if ! launchctl print "$SYS/$WEB_LABEL" >/dev/null 2>&1; then
+  echo "web daemon not loaded; run bin/install-launchd (needs sudo)"
+  exit 0
+fi
+
+echo "==> restart $WEB_LABEL"
+sudo launchctl kickstart -k "$SYS/$WEB_LABEL"
+
+echo "==> waiting for :$PORT"
+for _ in $(seq 1 30); do
+  if curl -fs -o /dev/null "http://localhost:$PORT/health/"; then
+    echo "up: $(git log --oneline -1)"
+    exit 0
+  fi
+  sleep 1
+done
+echo "app did not answer on :$PORT within 30s; see $LOG_DIR/web.err.log" >&2
+exit 1

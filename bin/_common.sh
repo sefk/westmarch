@@ -9,6 +9,12 @@ WEB_LABEL=com.sefk.life-metrics.web
 HOURLY_LABEL=com.sefk.life-metrics.load-hourly
 DAILY_LABEL=com.sefk.life-metrics.load-daily
 LABELS=("$WEB_LABEL" "$HOURLY_LABEL" "$DAILY_LABEL")
+# Per-user LaunchAgent for loaders that need the login Keychain (cadence
+# "session"). Lives in gui/<uid>, so it only runs while you are logged in.
+AGENTS_DIR="$HOME/Library/LaunchAgents"
+GUI="gui/$(id -u)"
+SESSION_LABEL=com.sefk.life-metrics.load-session
+AGENT_LABELS=("$SESSION_LABEL")
 unset VIRTUAL_ENV
 
 load_env() {

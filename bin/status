@@ -5,17 +5,19 @@ set -uo pipefail
 . "$(dirname "$0")/_common.sh"
 cd "$ROOT"
 load_env
-for label in "${LABELS[@]}"; do
-  echo "== $label"
-  if out="$(launchctl print "$SYS/$label" 2>&1)"; then
+show() {  # domain label
+  echo "== $2 ($1)"
+  if out="$(launchctl print "$1/$2" 2>&1)"; then
     echo "$out" | grep -E '^\s*(state|pid|runs|last exit code|run interval) ' || true
   else
     echo "not loaded (bin/install-launchd)"
   fi
-done
+}
+for label in "${LABELS[@]}"; do show "$SYS" "$label"; done
+for label in "${AGENT_LABELS[@]}"; do show "$GUI" "$label"; done
 echo; echo "== web :$PORT"
 curl -fs -m 3 "http://localhost:$PORT/health/" && echo || echo "not answering"
-for f in web.err load-hourly.out load-daily.out; do
+for f in web.err load-hourly.out load-daily.out load-session.out; do
   echo; echo "== $f.log (last 6)"
   tail -n 6 "$LOG_DIR/$f.log" 2>/dev/null || echo "(no log)"
 done

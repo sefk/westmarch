@@ -157,7 +157,7 @@ def backfill_claude_monitor(path: Path) -> int:
 
 class ClaudeLimitsLoader(Loader):
     name = "claude_limits"
-    cadence = "hourly"
+    cadence = "session"  # reads the login Keychain; a system daemon can't
     monitor_db = CLAUDE_MONITOR_DB
 
     def load(self, full: bool = False) -> int:

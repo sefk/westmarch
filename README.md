@@ -49,30 +49,35 @@ DJANGO_DEBUG=true uv run manage.py runserver 8520
 
 ## Deployment (always-on Mac)
 
-Three system LaunchDaemons, rendered from `ops/launchd/*.plist.in` and run
-as this user so they start at boot with nobody logged in:
+Four launchd jobs, rendered from `ops/launchd/*.plist.in`. Three are
+system LaunchDaemons that run as this user so they start at boot with
+nobody logged in. The fourth is a per-user LaunchAgent in
+`~/Library/LaunchAgents`, because the Claude limits loader reads the Claude
+Code token from the login Keychain, which a system daemon cannot see:
 
-| job | does | when |
-|-----|------|------|
-| `com.sefk.life-metrics.web` | gunicorn on `:8520` (`LIFE_PORT`) | always, restarted on crash |
-| `com.sefk.life-metrics.load-hourly` | `bin/load hourly`: the hourly loaders | every hour |
-| `com.sefk.life-metrics.load-daily` | `bin/load daily`: the daily loaders, then a full agentsview reload | 04:15 |
+| job | domain | does | when |
+|-----|--------|------|------|
+| `com.sefk.life-metrics.web` | system | gunicorn on `:8520` (`LIFE_PORT`) | always, restarted on crash |
+| `com.sefk.life-metrics.load-hourly` | system | `bin/load hourly`: loaders with cadence `hourly` | every hour |
+| `com.sefk.life-metrics.load-daily` | system | `bin/load daily`: cadence `daily`, then a full agentsview reload | 04:15 |
+| `com.sefk.life-metrics.load-session` | gui/uid | `bin/load session`: cadence `session` (Claude limits) | every hour, while logged in |
 
 ```sh
-bin/install-launchd     # render and load the three jobs (sudo)
-bin/deploy              # uv sync, tests, migrate, restart web, wait for /health/
-bin/status              # job state, web check, log tails, last run of every loader
-bin/uninstall-launchd   # sudo
+bin/install-launchd          # render and load all four (sudo for the daemons)
+bin/install-launchd --agent  # just the LaunchAgent, no sudo
+bin/deploy                   # uv sync, tests, migrate, restart web, wait for /health/
+bin/status                   # job state, web check, log tails, last run of every loader
+bin/uninstall-launchd        # sudo
 ```
 
 Logs land in `var/log/`. A loader job ends with a `LOAD hourly OK` or
 `LOAD hourly FAILED` line. The loader jobs need no restart on deploy:
 launchd starts a fresh process each tick.
 
-Caveat: the Claude limits loader reads the Claude Code token from the
-login Keychain. Under a system daemon that works while you are logged in
-to the Mac; if the Keychain is locked the loader records itself disabled
-for that run and tries again next hour.
+The LaunchAgent only exists while you have a login session, so after a
+reboot the Claude limits series has a gap until you log in. The screen
+being locked is fine; the Keychain stays unlocked. There is deliberately no
+auto-login.
 
 ## Tests
 

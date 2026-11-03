@@ -5,6 +5,7 @@
     manage.py load agentsview github
     manage.py load --all --full     # ignore incremental cursors
     manage.py load --all --cadence hourly
+    manage.py load --all --cadence session   # loaders that need the login Keychain
 """
 
 from django.core.management.base import BaseCommand, CommandError
@@ -20,7 +21,7 @@ class Command(BaseCommand):
         parser.add_argument("names", nargs="*")
         parser.add_argument("--all", action="store_true")
         parser.add_argument("--full", action="store_true", help="ignore incremental cursors")
-        parser.add_argument("--cadence", choices=["hourly", "daily"], help="with --all: only this cadence")
+        parser.add_argument("--cadence", choices=["hourly", "daily", "session"], help="with --all: only this cadence")
 
     def handle(self, *args, **opts):
         loaders = registry()

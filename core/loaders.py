@@ -28,7 +28,9 @@ class Disabled(Exception):
 
 class Loader(ABC):
     name: str  # short, stable; the key in LoaderRun and LoaderState
-    cadence: str = "daily"  # "hourly" | "daily"; documentation for the scheduler
+    cadence: str = "daily"  # "hourly" | "daily" | "session"; which launchd job runs it.
+    # "session" = hourly, but needs the login Keychain, so it runs from a per-user
+    # LaunchAgent rather than a system daemon (see bin/install-launchd).
 
     @abstractmethod
     def load(self, full: bool = False) -> int:

@@ -277,9 +277,14 @@ always-on host, replacing studio, is open.
 
 ## Operations
 
-- `studio`, system LaunchDaemon `com.sefk.life-metrics` (web) plus a
-  scheduled loader job. App on `:8520`, Grafana on `:3520` (free, and clear
-  of everything in `local-redirector/shares.toml`).
+- `studio`, system LaunchDaemons for the web server and the hourly and
+  daily loader jobs, so they run at boot with nobody logged in. App on
+  `:8520`, Grafana on `:3520` (free, and clear of everything in
+  `local-redirector/shares.toml`).
+- Loaders that need the login Keychain (today only Claude limits) run from a
+  per-user LaunchAgent instead. It only runs while I am logged in; no
+  auto-login, so after a reboot the graphs have a gap until I log in. That
+  is acceptable: the limits only move while I am using Claude Code anyway.
 - Grafana: a second instance with its own config and `var/`, same binary as
   homepower's. Config and provisioning only, no software changes.
 - Front door: `tailscale serve` and a local-redirector share
@@ -321,6 +326,8 @@ always-on host, replacing studio, is open.
   M5 behind the same MCP server; homegrown only if that fails.
 - Ports: app `:8520`, Grafana `:3520`.
 - Phase 1 loaders are built first, before any UI.
+- No auto-login on the always-on Mac. The Claude limits loader runs as a
+  LaunchAgent and goes quiet after a reboot until I log in.
 
 **2026-10-31**
 

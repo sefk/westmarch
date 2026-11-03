@@ -33,7 +33,7 @@ uv run manage.py load --all --full # ignore incremental cursors, reload everythi
 | agentsview | AI coding sessions, tokens, cost via agentsview's API | hourly |
 | claude_limits | Claude subscription rate-limit usage | hourly |
 | github | commits, issues, PRs for my repos | daily |
-| herdr | herdr tabs and sessions | daily |
+| herdr | herdr workspaces, tabs and focus events | hourly |
 
 Each loader lives in `sources/<name>/` with its own models, migrations and
 tests. The framework (`core/loaders.py`) records every run in

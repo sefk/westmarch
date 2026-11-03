@@ -183,7 +183,7 @@ Deliverables:
 5. Deployment: LaunchDaemon, local-redirector share, backup job.
 6. MCP server exposing project and usage queries.
 
-## Phase 2: email, calendar, and health
+## Phase 2: email, calendar, messages, and health
 
 **Gmail / Calendar / Tasks.** Slurp the whole mailbox locally, as both a
 backup and an analyzable corpus. Approach: Gmail API with the `readonly`
@@ -204,6 +204,10 @@ Shortcut automation, or an Apple Health to SQLite importer run against a
 one-time export for the historical backfill. Metrics of interest: workouts
 (gym), time outdoors / daylight, steps, sleep, heart rate and HRV.
 
+**iMessage.** From localai's source list. The Messages database at
+`~/Library/Messages/chat.db` is readable with Full Disk Access; load it
+incrementally by row id. Attachments stay where they are.
+
 **Books.** Source TBD: Kindle, Libby, Goodreads export, or a hand-kept
 list.
 
@@ -221,6 +225,48 @@ list.
   assume a git repo.
 - Possibly subsume local-redirector's role as the house front page.
 
+## Personal agent
+
+Folded in from the `~/localai` PRD (September 2026), which this project
+absorbs. The goal there: a local agent on the always-on Mac that answers
+research questions over my own data ("when did we install the solar
+system?"), grows into an assistant that scans for things and keeps me on
+top of them, and only much later, if it earns trust, takes actions.
+
+**Design.** The agent is a consumer of this project's data, like the
+catalog and Grafana. It never reads the SQLite file or the raw store
+directly; it goes through the MCP server, which is the enforcement point
+for the policy below and logs every call. That seam keeps the harness
+swappable.
+
+**Harness.** Three candidates, in the order we will try them:
+
+1. **Claude Code or Codex over the MCP server.** Zero new code; the
+   interactive research agent from day one.
+2. **[Hermes Agent][hermes]** (Nous Research, MIT, Python) for the
+   always-on role: messaging gateways (Signal, Telegram, email), a
+   natural-language cron scheduler, memory, skills, subagents, sandboxed
+   terminal backends, and an MCP client, against any OpenAI-compatible
+   endpoint such as LM Studio. Trial it on the M5 once it arrives, limited
+   to MCP tools and a Docker terminal backend. Its size and pace are the
+   risk: it writes its own skills and its gateways face the internet.
+3. **Homegrown loop.** Only if Hermes fails the trial. The merit is the
+   one the localai PRD named: knowing exactly what it is up to.
+
+**Policy** (from localai; the MCP server enforces it):
+
+| Allowed | Not allowed |
+|---------|-------------|
+| Web search | Sending mail or messages to anyone but me |
+| Reading data through MCP tools | Reading the filesystem outside the data directories |
+| Communicating with me | Access to 1Password or any credential store |
+| | Taking actions, until explicitly granted per action |
+
+**Hardware.** The M5 Mac arriving in early November 2026 runs the larger
+local models (target: qwen3.8-flash-next) that make full-mailbox
+summarization and classification practical. Whether it also becomes the
+always-on host, replacing studio, is open.
+
 ## Storage
 
 - SQLite database in the repo's `var/`, backed up like homepower's.
@@ -232,8 +278,8 @@ list.
 ## Operations
 
 - `studio`, system LaunchDaemon `com.sefk.life-metrics` (web) plus a
-  scheduled loader job. Ports to be assigned, avoiding the ones in
-  `local-redirector/shares.toml`.
+  scheduled loader job. App on `:8520`, Grafana on `:3520` (free, and clear
+  of everything in `local-redirector/shares.toml`).
 - Grafana: a second instance with its own config and `var/`, same binary as
   homepower's. Config and provisioning only, no software changes.
 - Front door: `tailscale serve` and a local-redirector share
@@ -250,6 +296,7 @@ list.
 - [HPI][hpi]: Python personal data importers; ideas for incremental exports.
 - [LifeGraph][lifegraph]: Garmin, GitHub, mood, sleep into insights.
 - [Edi Life OS][edi]: self-hosted life dashboard with an MCP server.
+- [Hermes Agent][hermes]: the harness candidate for the always-on agent.
 - [claude-monitor][cm]: how to read Claude subscription limits.
 - [Claude Code ROI guide][roi]: OpenTelemetry alternative for usage data.
 - Exist.io and Gyroscope: commercial references for which correlations
@@ -257,13 +304,23 @@ list.
 
 ## Open questions
 
-- Which ports for the app and its Grafana.
+- Which machine is the always-on host once the M5 arrives.
 - Whether Codex and Gemini expose any limit data programmatically.
 - API vs. Takeout for the initial Gmail backfill.
 - GitHub repo: create `sefk/life-metrics` now or after the skeleton.
 - Books source.
 
 ## Decisions log
+
+**2026-11-02**
+
+- `~/localai` is absorbed into this project; its PRD becomes the personal
+  agent section above and its allowed / not-allowed lists become the MCP
+  server's policy. iMessage joins the phase 2 loaders.
+- Agent harness: Claude Code over MCP first, then trial Hermes Agent on the
+  M5 behind the same MCP server; homegrown only if that fails.
+- Ports: app `:8520`, Grafana `:3520`.
+- Phase 1 loaders are built first, before any UI.
 
 **2026-10-31**
 
@@ -296,6 +353,7 @@ list.
 [hpi]: https://github.com/karlicoss/HPI
 [lifegraph]: https://github.com/Evermaple/life-graph
 [edi]: https://zeli.app/story/50014150
+[hermes]: https://github.com/NousResearch/hermes-agent
 [cm]: https://github.com/rjwalters/claude-monitor
 [roi]: https://github.com/sefk/claude-code-monitoring-guide
 [hae]: https://www.healthyapps.dev/

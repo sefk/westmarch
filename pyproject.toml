@@ -20,4 +20,4 @@ dev = [
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "lifemetrics.settings"
 python_files = ["test_*.py"]
-testpaths = ["tests", "core", "sources"]
+testpaths = ["tests", "core", "sources", "derive", "catalog"]

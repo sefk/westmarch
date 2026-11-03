@@ -29,6 +29,8 @@ INSTALLED_APPS = [
     "sources.github",
     "sources.herdr",
     "sources.gitlocal",
+    "derive",
+    "catalog",
 ]
 
 # Every loader, in the order `manage.py load --all` runs them. A sources
@@ -42,6 +44,7 @@ LOADERS = [
     "sources.limits.loader.CodexLimitsLoader",
     "sources.github.loader.GitHubLoader",
     "sources.herdr.loader.HerdrLoader",
+    "derive.loader.DeriveLoader",  # last: joins the sources onto core.Project
 ]
 
 MIDDLEWARE = [

@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Subscriptions{% endblock %}
+
+{% block head %}
+<script src="{% static 'vendor/plotly.min.js' %}"></script>
+<style>
+.page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+.page-head h1 { margin: 0; }
+.ranges { display: flex; gap: 0.25rem; font-size: 0.85rem; }
+.ranges a {
+  color: var(--ink-2); text-decoration: none;
+  padding: 0.15rem 0.6rem; border: 1px solid var(--border); border-radius: 999px;
+}
+.ranges a.active { color: var(--ink); border-color: var(--series-1); font-weight: 600; }
+.card-head { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; }
+.card-head .plan { color: var(--ink-2); font-size: 0.9rem; }
+.tag { font-size: 0.75rem; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.35rem; }
+.equiv { margin: 0.5rem 0 0.75rem; font-size: 0.9rem; color: var(--ink-2); }
+.equiv b { color: var(--ink); font-variant-numeric: tabular-nums; }
+table.now { width: 100%; margin-bottom: 0.5rem; }
+table.now td.bar-cell { width: 34%; }
+.bar { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--series-1); }
+.bar > span.warn { background: var(--status-warn); }
+.bar > span.critical { background: var(--status-critical); }
+.chart { width: 100%; height: 260px; }
+.chart.usd { height: 180px; }
+.chart-empty { padding: 1rem 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Am I making good use of my AI subscriptions?</h1>
+  <nav class="ranges" aria-label="Chart range">
+    {% for r in ranges %}<a href="?range={{ r }}" class="{% if r == range %}active{% endif %}">{{ r }}</a>{% endfor %}
+  </nav>
+</div>
+
+{% for card in cards %}
+<section class="card" id="{{ card.vendor }}">
+  <div class="card-head">
+    <h2>{{ card.title }}</h2>
+    <span class="plan">{{ card.sub.plan }}{% if card.sub.monthly_usd %} · ${{ card.sub.monthly_usd|floatformat:0 }}/month{% elif card.sub.plan != "pay-as-you-go" %} · pay as you go{% endif %}</span>
+    {% if card.sub.shared %}<span class="tag">shared</span>{% endif %}
+  </div>
+
+  {% if card.spend %}
+  <p class="equiv">
+    This month: <b>${{ card.spend.month_usd|floatformat:"0g" }}</b> of API-equivalent usage on a
+    ${{ card.sub.monthly_usd|floatformat:0 }} plan{% if card.spend.month_x is not None %} (<b>{{ card.spend.month_x|floatformat:1 }}x</b>){% endif %},
+    {{ card.spend.month_sessions }} session{{ card.spend.month_sessions|pluralize }}.
+    Trailing 30 days: <b>${{ card.spend.d30_usd|floatformat:"0g" }}</b>{% if card.spend.d30_x is not None %} (<b>{{ card.spend.d30_x|floatformat:1 }}x</b>){% endif %},
+    {{ card.spend.d30_sessions }} session{{ card.spend.d30_sessions|pluralize }}{% if card.spend.d30_subagents %} plus {{ card.spend.d30_subagents }} subagent run{{ card.spend.d30_subagents|pluralize }}{% endif %}.
+  </p>
+  {% elif card.vendor == "openrouter" %}
+  <p class="equiv">
+    {% if card.openrouter_month is not None %}This month: <b>${{ card.openrouter_month|floatformat:2 }}</b> actual spend.{% else %}No spend reported yet.{% endif %}
+  </p>
+  {% elif card.vendor == "gemini" %}
+  <p class="equiv">No programmatic limits; chat only.</p>
+  {% endif %}
+
+  {% if card.rows %}
+  <table class="data now">
+    <thead><tr><th>window</th><th>utilization</th><th>%</th><th>used / limit</th><th>resets</th><th>as of</th></tr></thead>
+    <tbody>
+    {% for row in card.rows %}
+    <tr>
+      <td>{{ row.label }}</td>
+      <td class="bar-cell">{% if row.bar_pct is not None %}<div class="bar"><span class="{{ row.level }}" style="width: {{ row.bar_pct|floatformat:1|default:0 }}%"></span></div>{% endif %}</td>
+      <td>{% if row.pct is not None %}{{ row.pct|floatformat:0 }}%{% else %}<span class="muted">-</span>{% endif %}</td>
+      <td>{% if row.used_usd is not None %}${{ row.used_usd|floatformat:2 }}{% if row.limit_usd is not None %} / ${{ row.limit_usd|floatformat:2 }}{% endif %}{% endif %}</td>
+      <td>{{ row.resets|default:"" }}</td>
+      <td class="muted" title="source: {{ row.source }}">{{ row.age }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <div class="chart pct" id="chart-pct-{{ card.vendor }}"></div>
+  <div class="chart usd" id="chart-usd-{{ card.vendor }}" hidden></div>
+  {% if card.vendor == "codex" %}<p class="small muted" style="margin:0">Codex reports its limit only in session logs, so it is sampled only while Codex is in use; gaps mean no use, not zero.</p>{% endif %}
+  {% elif card.vendor != "gemini" %}
+  <p class="muted small">No limit snapshots yet.</p>
+  {% endif %}
+</section>
+{% endfor %}
+
+<script>
+(function () {
+  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const ink2 = dark ? "#c3c2b7" : "#52514e";
+  const muted = "#898781";
+  const grid = dark ? "#2c2c2a" : "#e1e0d9";
+  const baseline = dark ? "#383835" : "#c3c2b7";
+  const critical = "#d03b3b";
+  const colors = dark
+    ? ["#3987e5", "#d95926", "#2bb3a3", "#b07ad9", "#c9a227"]
+    : ["#2a78d6", "#eb6834", "#1a9e8f", "#9b59c9", "#b38b12"];
+
+  function baseLayout(yTitle) {
+    return {
+      margin: { l: 60, r: 15, t: 30, b: 35 },
+      paper_bgcolor: "rgba(0,0,0,0)",
+      plot_bgcolor: "rgba(0,0,0,0)",
+      font: { family: "system-ui, sans-serif", size: 12, color: ink2 },
+      xaxis: { type: "date", gridcolor: grid, linecolor: baseline, zeroline: false },
+      yaxis: { title: { text: yTitle }, gridcolor: grid, linecolor: baseline, zeroline: false, automargin: true },
+      legend: { orientation: "h", yanchor: "bottom", y: 1.02, x: 0 },
+      hovermode: "x unified",
+    };
+  }
+
+  // ISO strings with offsets -> Date objects, which plotly renders in local time.
+  const toDates = (xs) => xs.map((s) => new Date(s));
+
+  function draw(id, traces, kind) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (!traces.length) {
+      if (kind === "pct") {
+        el.classList.add("chart-empty");
+        el.style.height = "auto";
+        el.innerHTML = '<p class="small muted" style="margin:0">No snapshots in this range.</p>';
+      }
+      return;
+    }
+    el.hidden = false;
+    const fmt = kind === "pct" ? "%{y:.0f}%" : "$%{y:.2f}";
+    const plotTraces = traces.map((t, i) => ({
+      x: toDates(t.x),
+      y: t.y,
+      name: t.name,
+      type: "scatter",
+      // markers too: sparse series (Codex) are mostly isolated samples
+      // between gaps, which a lines-only trace would not draw at all
+      mode: "lines+markers",
+      connectgaps: false, // gaps render as gaps
+      line: { width: 2, shape: "hv", color: colors[i % colors.length] },
+      marker: { size: 4 },
+      hovertemplate: fmt + "<extra>" + t.name + "</extra>",
+    }));
+    const layout = baseLayout(kind === "pct" ? "% of limit" : "USD");
+    if (kind === "pct") {
+      layout.yaxis.range = [0, 105];
+      layout.yaxis.ticksuffix = "%";
+      layout.shapes = [{
+        type: "line", xref: "paper", x0: 0, x1: 1, yref: "y", y0: 100, y1: 100,
+        line: { color: critical, width: 1, dash: "dash" },
+      }];
+    } else {
+      layout.yaxis.rangemode = "tozero";
+      layout.yaxis.tickprefix = "$";
+    }
+    layout.showlegend = true;
+    Plotly.newPlot(el, plotTraces, layout, { displayModeBar: false, responsive: true });
+  }
+
+  fetch("{% url 'catalog:subscriptions_data' %}?range={{ range|urlencode }}")
+    .then((r) => r.json())
+    .then((data) => {
+      document.querySelectorAll(".chart.pct").forEach((el) => {
+        const vendor = el.id.replace("chart-pct-", "");
+        const traces = (data[vendor] || { traces: [] }).traces;
+        draw("chart-pct-" + vendor, traces.filter((t) => t.kind === "pct"), "pct");
+        draw("chart-usd-" + vendor, traces.filter((t) => t.kind === "usd"), "usd");
+      });
+    });
+})();
+</script>
+{% endblock %}

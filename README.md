@@ -36,10 +36,36 @@ uv run manage.py load --all --full # ignore incremental cursors, reload everythi
 | codex_limits | Codex weekly limit, read from the CLI's local session logs | hourly |
 | github | commits, issues, PRs for my repos | daily |
 | herdr | herdr workspaces, tabs and focus events | hourly |
+| derive | maps source names onto projects, rolls up per-project daily totals (`ProjectDay`) | hourly |
 
 Each loader lives in `sources/<name>/` with its own models, migrations and
 tests. The framework (`core/loaders.py`) records every run in
 `LoaderRun` and keeps incremental cursors in `LoaderState`.
+
+### Derive
+
+`derive` (in `derive/`, run last) joins the sources onto `core.Project`.
+It writes `ProjectAlias` rows for agentsview project names, GitHub repos
+and herdr tab cwds (paths resolve by longest checkout prefix, or as a
+sibling worktree `<checkout>-<suffix>`); it only creates aliases, so hand
+edits win. It then rebuilds `ProjectDay`, one row per project per local
+day (sessions, cost, tokens, commits, GitHub activity, herdr focus), and
+`UnmappedDay` for agentsview usage no project claimed. Incremental runs
+rebuild from three days before the last run; `--full` rebuilds all.
+`uv run manage.py unmapped` lists the names that map nowhere: add them as
+`aliases` in `~/src/AGENTS.md`.
+
+## UI
+
+Plain Django templates (`templates/`), plotly vendored at
+`static/vendor/plotly.min.js`, no build step and no CDN. Pages render
+HTML; each chart fetches a JSON endpoint and draws it.
+
+| URL | what |
+|-----|------|
+| `/` | the catalog: each analysis and the question it answers, plus the last run of every loader |
+| `/subscriptions/?range=7d` | "Am I making good use of my AI subscriptions?": per plan, the latest reading of every limit window, its history (`range` = `24h`, `7d`, `30d`, `all`), and agentsview's API-equivalent spend against the monthly price |
+| `/subscriptions/data/?range=7d` | the chart data: `{vendor: {traces: [{name, window, x, y, kind}]}}`, `kind` `pct` or `usd` |
 
 ## Running locally
 

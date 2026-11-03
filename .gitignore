@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+
+# Secrets and runtime state
+.env
+var/
+db.sqlite3
+db.sqlite3-*
+secrets/
+
+.pytest_cache/
+.tmp/
+.claude/settings.local.json

@@ -1,0 +1,23 @@
+[project]
+name = "life-metrics"
+version = "0.1.0"
+description = "Personal data warehouse and dashboard: work, AI usage, and later the rest of life."
+requires-python = ">=3.14"
+dependencies = [
+    "django>=5.2,<6",
+    "gunicorn>=23",
+    "python-dotenv>=1.2",
+    "requests>=2.32",
+    "whitenoise>=6.12",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9",
+    "pytest-django>=4.12",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "lifemetrics.settings"
+python_files = ["test_*.py"]
+testpaths = ["tests", "core", "sources"]

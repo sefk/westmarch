@@ -27,7 +27,7 @@ class Command(BaseCommand):
         if not opts["names"] and not opts["all"]:
             for name, loader in loaders.items():
                 last = LoaderRun.objects.filter(loader=name).first()
-                self.stdout.write(f"{name:14} {loader.cadence:7} {last or 'never run'}")
+                self.stdout.write(f"{name:18} {loader.cadence:7} {last or 'never run'}")
             return
         if opts["all"]:
             chosen = [l for l in loaders.values() if not opts["cadence"] or l.cadence == opts["cadence"]]
@@ -39,7 +39,7 @@ class Command(BaseCommand):
         failed = 0
         for loader in chosen:
             run = run_loader(loader, full=opts["full"])
-            self.stdout.write(f"{loader.name:14} {'ok' if run.ok else 'FAILED':6} {run.message.splitlines()[0]}")
+            self.stdout.write(f"{loader.name:18} {'ok' if run.ok else 'FAILED':6} {run.message.splitlines()[0]}")
             failed += not run.ok
         if failed:
             raise CommandError(f"{failed} loader(s) failed")

@@ -38,6 +38,8 @@ LOADERS = [
     "sources.gitlocal.loader.GitLocalLoader",
     "sources.agentsview.loader.AgentsviewLoader",
     "sources.limits.loader.ClaudeLimitsLoader",
+    "sources.limits.loader.OpenRouterLimitsLoader",
+    "sources.limits.loader.CodexLimitsLoader",
     "sources.github.loader.GitHubLoader",
     "sources.herdr.loader.HerdrLoader",
 ]
@@ -112,6 +114,9 @@ HERDR_DIR = Path(os.environ.get("HERDR_DIR", Path.home() / ".config" / "herdr"))
 
 # GitHub: blank token means "ask `gh auth token`".
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+# OpenRouter: blank disables the credits loader.
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+
 GITHUB_OWNERS = [s for s in os.environ.get("GITHUB_OWNERS", "sefk,biglocalnews").split(",") if s]
 
 LOGGING = {

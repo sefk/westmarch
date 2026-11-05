@@ -29,6 +29,9 @@ INSTALLED_APPS = [
     "sources.github",
     "sources.herdr",
     "sources.gitlocal",
+    "sources.google",
+    "sources.imessage",
+    "sources.health",
     "derive",
     "catalog",
 ]
@@ -44,7 +47,13 @@ LOADERS = [
     "sources.limits.loader.CodexLimitsLoader",
     "sources.github.loader.GitHubLoader",
     "sources.herdr.loader.HerdrLoader",
-    "derive.loader.DeriveLoader",  # last: joins the sources onto core.Project
+    "sources.google.loader.CalendarLoader",
+    "sources.google.loader.TasksLoader",
+    "sources.imessage.loader.IMessageLoader",
+    "derive.loader.DeriveLoader",  # joins the sources onto core.Project
+    # Last: the first Gmail backfill works for up to 20 minutes per run,
+    # and nothing else should wait behind it.
+    "sources.google.loader.GmailLoader",
 ]
 
 MIDDLEWARE = [
@@ -119,6 +128,30 @@ HERDR_DIR = Path(os.environ.get("HERDR_DIR", Path.home() / ".config" / "herdr"))
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 # OpenRouter: blank disables the credits loader.
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+
+# --- phase 2 ---
+
+# Bulk raw data (mail, health payloads) lives off the boot disk. A loader
+# that needs it reports itself disabled when the volume isn't mounted.
+RAW_DIR = Path(os.environ.get("LIFE_RAW_DIR", "/Volumes/ext1/life-metrics"))
+
+# Google: a Desktop OAuth client and the token `manage.py google_auth`
+# writes. Read-only scopes; this project never sends or modifies anything.
+SECRETS_DIR = BASE_DIR / "secrets"
+GOOGLE_CLIENT_FILE = Path(os.environ.get("GOOGLE_CLIENT_FILE", SECRETS_DIR / "google-client.json"))
+GOOGLE_TOKEN_FILE = Path(os.environ.get("GOOGLE_TOKEN_FILE", SECRETS_DIR / "google-token.json"))
+GOOGLE_SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/tasks.readonly",
+]
+
+# iMessage: needs Full Disk Access for whatever process runs the loader.
+IMESSAGE_DB = Path(os.environ.get("IMESSAGE_DB", Path.home() / "Library" / "Messages" / "chat.db"))
+
+# Apple Health: Health Auto Export POSTs to /ingest/health/ with this
+# token in the `X-Ingest-Token` header. Blank disables the endpoint.
+HEALTH_INGEST_TOKEN = os.environ.get("HEALTH_INGEST_TOKEN", "")
 
 GITHUB_OWNERS = [s for s in os.environ.get("GITHUB_OWNERS", "sefk,biglocalnews").split(",") if s]
 

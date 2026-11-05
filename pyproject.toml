@@ -5,6 +5,8 @@ description = "Personal data warehouse and dashboard: work, AI usage, and later 
 requires-python = ">=3.14"
 dependencies = [
     "django>=5.2,<6",
+    "google-api-python-client>=2.201.0",
+    "google-auth-oauthlib>=1.5.0",
     "gunicorn>=23",
     "python-dotenv>=1.2",
     "requests>=2.32",

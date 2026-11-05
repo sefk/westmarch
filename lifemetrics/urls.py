@@ -8,5 +8,6 @@ def health(request):
 
 urlpatterns = [
     path("health/", health),
+    path("ingest/health/", include("sources.health.urls")),
     path("", include("catalog.urls")),
 ]

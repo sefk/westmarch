@@ -317,6 +317,21 @@ always-on host, replacing studio, is open.
 
 ## Decisions log
 
+**2026-11-05**
+
+- Phase 2 loaders built ahead of their credentials: Google (Gmail,
+  Calendar, Tasks; read-only scopes), iMessage (read-only on `chat.db`),
+  and an Apple Health ingest endpoint for Health Auto Export. Each stays
+  "disabled" until its unlock step: Google consent, Full Disk Access, and
+  the phone automation.
+- Gmail backfill goes through the API, 20 minutes per hourly run,
+  resumable; Takeout stays the fallback if that proves too slow.
+- Deleted mail keeps its row and raw file (`deleted_at`): the mirror is a
+  backup.
+- Health ingest is authenticated with a shared-secret header, since the
+  port is reachable from the LAN as well as Tailscale.
+- Books and Photos are not started.
+
 **2026-11-02**
 
 - `~/localai` is absorbed into this project; its PRD becomes the personal

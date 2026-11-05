@@ -37,6 +37,11 @@ uv run manage.py load --all --full # ignore incremental cursors, reload everythi
 | github | commits, issues, PRs for my repos | daily |
 | herdr | herdr workspaces, tabs and focus events | hourly |
 | derive | maps source names onto projects, rolls up per-project daily totals (`ProjectDay`) | hourly |
+| gcal | every Google calendar, full history, read-only | hourly |
+| gtasks | every Google Tasks list, read-only | daily |
+| imessage | the Messages database, read-only | hourly |
+| gmail | full mailbox mirror: raw messages on the external SSD, headers in SQLite, read-only | hourly |
+| health | not a loader: Apple Health pushed to `/ingest/health/` by Health Auto Export | on push |
 
 Each loader lives in `sources/<name>/` with its own models, migrations and
 tests. The framework (`core/loaders.py`) records every run in
@@ -54,6 +59,91 @@ day (sessions, cost, tokens, commits, GitHub activity, herdr focus), and
 rebuild from three days before the last run; `--full` rebuilds all.
 `uv run manage.py unmapped` lists the names that map nowhere: add them as
 `aliases` in `~/src/AGENTS.md`.
+
+## Phase 2 sources
+
+Each needs one unlock step from a human. Until then its loader reports
+"disabled" and everything else keeps running.
+
+### Google (Gmail, Calendar, Tasks)
+
+Read-only: scopes are gmail.readonly, calendar.readonly and
+tasks.readonly. Nothing is ever sent, labelled, moved or deleted in Google.
+
+One-time setup:
+
+1. In the [Google Cloud console][gcp], use a project with the Gmail API,
+   Google Calendar API and Google Tasks API enabled, and an OAuth client ID
+   of type **Desktop app**. Download its JSON to
+   `secrets/google-client.json` (or set `GOOGLE_CLIENT_FILE`). The client
+   wrgpt-buddy already uses works too.
+2. Run `uv run manage.py google_auth`. A browser opens for consent and the
+   token is saved to `secrets/google-token.json` (mode 0600, gitignored).
+   The command prints the account, the message count, and whether Calendar
+   and Tasks respond; if an API isn't enabled it prints the URL that
+   enables it.
+3. `manage.py google_auth --check` re-checks without a browser; `--force`
+   consents again.
+
+**Gmail** mirrors the whole mailbox. Each raw message is stored
+gzip-compressed at `$LIFE_RAW_DIR/gmail/<xx>/<id>.eml.gz` (default
+`/Volumes/ext1/life-metrics`) with parsed headers in SQLite. The loader
+reports disabled when the external volume isn't mounted. The first backfill
+works 20 minutes per hourly run and resumes where it left off; progress is
+in LoaderState (`messages_stored` against `messages_total`,
+`backfill_done`). After that each run applies Gmail's change history: new
+mail, label changes and deletions. Deleted messages keep their row and
+file, with `deleted_at` set. `manage.py load gmail --full` re-walks the
+mailbox and fetches anything missing.
+
+**Calendar** syncs every calendar's full history with per-calendar sync
+tokens; recurring events are stored once, not expanded. **Tasks** syncs
+every list, including completed, hidden and deleted tasks.
+
+### iMessage
+
+Mirrors `~/Library/Messages/chat.db` (override with `IMESSAGE_DB`) into
+Handle, Chat, Message and Attachment tables. The database is opened
+read-only; attachment files are never touched, only their metadata. Message
+text is stored but never logged; loader runs record counts only.
+
+Setup: macOS protects chat.db, so grant Full Disk Access (System Settings,
+Privacy & Security, Full Disk Access) to the Python binary that runs the
+loader. `uv run manage.py load imessage` names the exact path in its
+"disabled" message. A uv Python upgrade changes that path and the grant has
+to be redone.
+
+Incremental by message ROWID, plus a re-read of the trailing two days so
+edits, unsends and read receipts update; `load imessage --full` rereads
+everything. Newer macOS stores the body only in `attributedBody`; a small
+typedstream extractor decodes it, and undecodable bodies are counted in
+the loader state `body_decode_failures`. Tapbacks are rows with `reaction`
+set ("love", or "-love" when removed) and `reply_to_guid` pointing at the
+target.
+
+### Apple Health
+
+Health data arrives by push from the iOS app [Health Auto Export][hae]
+(Premium tier, REST API automations), never by manual export. The app
+POSTs JSON to `http://<host>:8520/ingest/health/` with the header
+`X-Ingest-Token: $HEALTH_INGEST_TOKEN`. A blank token disables the endpoint
+(503).
+
+Each accepted body is kept gzipped under `$LIFE_RAW_DIR/health/YYYY/MM/`
+(falling back to `var/health-raw/` when the external SSD is not mounted)
+and upserted into `Metric` (one row per metric, time and source; re-sent
+windows replace rather than duplicate), `SleepNight`, `Workout` and
+`IngestBatch`. Each ingest also shows up as a `health` row in the loader
+table.
+
+Check that data is landing at `/ingest/health/status/` (counts and the
+latest point per metric). Replay a saved payload, or backfill from a manual
+JSON export, with `uv run manage.py health_import file.json[.gz]`.
+
+Phone setup: two automations of type REST API (one for Health Metrics, one
+for Workouts), format JSON, export version 2, Batch Requests on, date range
+"Since Last Sync", Background App Refresh on, Low Power Mode off. Syncs
+only run while the phone is unlocked, and iOS may delay them.
 
 ## UI
 
@@ -112,3 +202,5 @@ uv run pytest -q
 ```
 
 [prd]: docs/prd.md
+[gcp]: https://console.cloud.google.com/
+[hae]: https://www.healthyapps.dev/

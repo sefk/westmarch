@@ -64,7 +64,8 @@ def test_backfill_stores_rows_and_raw(raw_dir):
     assert set(GmailLabel.objects.values_list("name", flat=True)) == {"INBOX", "Receipts"}
 
 
-def test_backfill_resumes_across_time_boxed_runs(raw_dir):
+def test_backfill_resumes_across_time_boxed_runs(raw_dir, monkeypatch):
+    monkeypatch.setattr("sources.google.loader.BATCH_SIZE", 50)
     clock = Clock()
     client = FakeClient(230, page_size=100, clock=clock, tick=10)  # each 50-id batch "takes" 10s
     # Run 1, budget 25s: page 1 (two batches, t=20), page 2's first batch (t=30), then stop
@@ -147,3 +148,14 @@ def test_full_rewalks_without_refetching(raw_dir):
     loader(client).load(full=True)
     assert client.fetched == [gid(2)]
     assert GmailMessage.objects.count() == 4
+
+
+def test_second_concurrent_run_is_disabled(raw_dir):
+    import fcntl
+
+    raw_dir.mkdir(exist_ok=True)
+    with open(raw_dir / ".gmail.lock", "w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        with pytest.raises(Disabled, match="another gmail run"):
+            loader(FakeClient(1)).load()
+    assert loader(FakeClient(1)).load() == 1  # lock released, runs normally

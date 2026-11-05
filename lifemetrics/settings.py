@@ -51,7 +51,7 @@ LOADERS = [
     "sources.google.loader.TasksLoader",
     "sources.imessage.loader.IMessageLoader",
     "derive.loader.DeriveLoader",  # joins the sources onto core.Project
-    # Last: the first Gmail backfill works for up to 20 minutes per run,
+    # Last: the first Gmail backfill works for up to 50 minutes per run,
     # and nothing else should wait behind it.
     "sources.google.loader.GmailLoader",
 ]
@@ -145,6 +145,11 @@ GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/tasks.readonly",
 ]
+
+# Gmail API quota for this Cloud project. Defaults are the limits for
+# projects created on or after 2026-05-01 (100 raw messages a minute).
+GMAIL_UNITS_PER_MINUTE = int(os.environ.get("GMAIL_UNITS_PER_MINUTE", "6000"))
+GMAIL_GET_RAW_UNITS = int(os.environ.get("GMAIL_GET_RAW_UNITS", "60"))
 
 # iMessage: needs Full Disk Access for whatever process runs the loader.
 IMESSAGE_DB = Path(os.environ.get("IMESSAGE_DB", Path.home() / "Library" / "Messages" / "chat.db"))

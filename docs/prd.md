@@ -324,8 +324,12 @@ always-on host, replacing studio, is open.
   and an Apple Health ingest endpoint for Health Auto Export. Each stays
   "disabled" until its unlock step: Google consent, Full Disk Access, and
   the phone automation.
-- Gmail backfill goes through the API, 20 minutes per hourly run,
-  resumable; Takeout stays the fallback if that proves too slow.
+- Gmail backfill goes through the API, resumable. Measured: the mailbox
+  has 713k messages and a new Cloud project is capped at 100 raw messages
+  a minute (6,000 units/minute, 60 per raw get, for projects created after
+  2026-05-01), so the API backfill takes about five days. Takeout, or an
+  OAuth client in a Cloud project that predates the quota change, are the
+  faster alternatives.
 - Deleted mail keeps its row and raw file (`deleted_at`): the mirror is a
   backup.
 - Health ingest is authenticated with a shared-secret header, since the

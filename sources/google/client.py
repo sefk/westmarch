@@ -4,10 +4,14 @@ Loaders call plain methods on `GoogleClient`, so tests swap in a fake with
 the same methods and never touch the network. This module owns retries,
 quota pacing and turning HttpErrors into a few meaningful exceptions.
 
-Gmail quota: messages.get and messages.list cost 5 units, the per-user
-limit is 250 units/second. Batches stay at 50 requests (250 units), and
-`_throttle` paces calls to stay under the per-second budget; 429s and
-403 rateLimitExceeded back off exponentially.
+Gmail quota, for Cloud projects created on or after 2026-05-01: 6,000
+units per user per minute, and messages.get costs 60 units with
+format=raw. That is 100 raw messages a minute, and it is the whole speed
+limit of the backfill. (Older projects keep 15,000 units/minute and 5
+units per get; set GMAIL_UNITS_PER_MINUTE and GMAIL_GET_RAW_UNITS in .env
+for one of those.) `_throttle` spreads calls evenly under the per-minute
+budget rather than bursting and stalling; 429s and 403 rateLimitExceeded
+back off exponentially.
 """
 
 from __future__ import annotations
@@ -18,16 +22,26 @@ import logging
 import re
 import time
 
+from django.conf import settings
+
 from .auth import load_credentials, service
 
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 50
-UNITS_PER_SECOND = 250
-GET_UNITS = 5
+BATCH_SIZE = 25
 LIST_UNITS = 5
 MAX_TRIES = 8
+MIN_BACKOFF = 5  # the limit is per minute; a 1 s retry only burns more quota
 MAX_BACKOFF = 64
+HEADROOM = 0.9  # stay a little under the limit; other calls share it
+
+
+def units_per_second() -> float:
+    return settings.GMAIL_UNITS_PER_MINUTE * HEADROOM / 60
+
+
+def get_raw_units() -> int:
+    return settings.GMAIL_GET_RAW_UNITS
 
 sleep = time.sleep  # patched in tests
 
@@ -122,14 +136,14 @@ class GoogleClient:
         return self._services[name]
 
     def _throttle(self, units: int) -> None:
-        """Pace so the moving average stays under UNITS_PER_SECOND."""
+        """Pace so the moving average stays under the per-minute quota."""
         now = time.monotonic()
         if self._next_ok > now:
             sleep(self._next_ok - now)
-        self._next_ok = max(now, self._next_ok) + units / UNITS_PER_SECOND
+        self._next_ok = max(now, self._next_ok) + units / units_per_second()
 
     def _exec(self, request, api: str, units: int = 1):
-        delay = 1
+        delay = MIN_BACKOFF
         for attempt in range(MAX_TRIES):
             self._throttle(units)
             self.calls += 1
@@ -170,7 +184,7 @@ class GoogleClient:
         items are retried with exponential backoff."""
         assert len(ids) <= BATCH_SIZE
         gmail = self.gmail
-        pending, out, delay = list(ids), {}, 1
+        pending, out, delay = list(ids), {}, MIN_BACKOFF
         for attempt in range(MAX_TRIES):
             results = {}
 
@@ -180,7 +194,7 @@ class GoogleClient:
             batch = gmail.new_batch_http_request(callback=cb)
             for i in pending:
                 batch.add(gmail.users().messages().get(userId="me", id=i, format="raw"), request_id=i)
-            self._throttle(GET_UNITS * len(pending))
+            self._throttle(get_raw_units() * len(pending))
             self.calls += 1
             try:
                 batch.execute()

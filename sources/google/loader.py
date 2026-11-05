@@ -28,6 +28,7 @@ since the last run, everything on `full=True`.
 from __future__ import annotations
 
 import logging
+import fcntl
 import time
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -45,7 +46,7 @@ from .parse import parse_headers, write_raw
 
 logger = logging.getLogger(__name__)
 
-GMAIL_RUN_SECONDS = 20 * 60
+GMAIL_RUN_SECONDS = 50 * 60  # most of the hour: the quota, not the time box, is the limit
 SKIP_ADD_LABELS = {"DRAFT", "SPAM"}  # draft revisions churn; spam isn't in the backfill either
 
 
@@ -99,6 +100,14 @@ class GmailLoader(Loader):
             raise Disabled(f"{root.parent} not mounted; raw mail lives in {root}")
         root.mkdir(exist_ok=True)
         self.root = root
+        # One run at a time: the hourly job and a hand-started run would
+        # otherwise fight over the page token and split the quota.
+        lock = open(root / ".gmail.lock", "w")
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            lock.close()
+            raise Disabled("another gmail run is in progress") from None
         client = get_client(self)
         self.deadline = self.clock() + self.budget_seconds
         try:
@@ -106,6 +115,7 @@ class GmailLoader(Loader):
         except ApiDisabled as exc:
             raise api_disabled(exc) from None
         finally:
+            lock.close()
             self.state_set("messages_stored", str(GmailMessage.objects.count()))
             self.state_set("parse_errors", str(GmailMessage.objects.exclude(parse_error="").count()))
 

@@ -97,10 +97,19 @@ One-time setup, with a Google Cloud project and OAuth client of its own
 **Gmail** mirrors the whole mailbox. Each raw message is stored
 gzip-compressed at `$LIFE_RAW_DIR/gmail/<xx>/<id>.eml.gz` (default
 `/Volumes/ext1/life-metrics`) with parsed headers in SQLite. The loader
-reports disabled when the external volume isn't mounted. The first backfill
-works 20 minutes per hourly run and resumes where it left off; progress is
-in LoaderState (`messages_stored` against `messages_total`,
-`backfill_done`). After that each run applies Gmail's change history: new
+reports disabled when the external volume isn't mounted.
+
+The first backfill is slow by Google's design. A Cloud project created on
+or after 2026-05-01 gets 6,000 quota units per user per minute and a raw
+message costs 60, so the ceiling is 100 messages a minute: about five days
+for 700,000 messages. The loader paces itself just under that, works up to
+50 minutes of each hourly run, and resumes where it left off; a lock keeps
+a second run from starting. Progress is in LoaderState (`messages_stored`
+against `messages_total`, `backfill_done`). A project that predates the
+change keeps the old limits (15,000 units a minute, 5 per message); for one
+of those set `GMAIL_UNITS_PER_MINUTE=15000` and `GMAIL_GET_RAW_UNITS=5`.
+
+After that each run applies Gmail's change history: new
 mail, label changes and deletions. Deleted messages keep their row and
 file, with `deleted_at` set. `manage.py load gmail --full` re-walks the
 mailbox and fetches anything missing.

@@ -84,8 +84,7 @@ def test_batch_retries_rate_limited_items(monkeypatch):
     out = c.gmail_get_raw(["a", "b", "gone"])
     assert out["a"]["raw"] == b"mail a" and out["b"]["raw"] == b"mail b" and out["gone"] is None
     assert c._services["gmail"].batches == [["a", "b", "gone"], ["b"], ["b"]]
-    backoffs = [s for s in sleeps if s >= 1]
-    assert backoffs == [1, 2]
+    assert [s for s in sleeps if s in (5, 10)] == [5, 10]  # MIN_BACKOFF, doubled
 
 
 def test_save_token_is_private(settings, tmp_path):
@@ -107,3 +106,13 @@ def test_no_token(settings, tmp_path):
     settings.GOOGLE_TOKEN_FILE = tmp_path / "none.json"
     with pytest.raises(auth.NoToken, match="run: manage.py google_auth"):
         auth.load_credentials()
+
+
+def test_throttle_paces_to_the_per_minute_quota(monkeypatch, settings):
+    settings.GMAIL_UNITS_PER_MINUTE, settings.GMAIL_GET_RAW_UNITS = 6000, 60
+    sleeps = []
+    monkeypatch.setattr(client_mod, "sleep", sleeps.append)
+    c = GoogleClient(creds=object())
+    c._throttle(60 * 25)  # one batch of 25 raw gets: free, the bucket was empty
+    c._throttle(60 * 25)  # the next must wait about 25 messages' worth: 25 / 90 per minute
+    assert not sleeps[:-1] and 16 < sleeps[-1] < 17

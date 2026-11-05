@@ -43,6 +43,13 @@ class GmailMessage(models.Model):
     attachment_count = models.IntegerField(default=0)
     parse_error = models.TextField(blank=True)  # non-empty: some header was unreadable
 
+    # Where the row came from: the API, or a Google Takeout mbox (manage.py
+    # gmail_import_takeout). Takeout rows start with empty label_ids (filled
+    # by gmail_sync_labels), no snippet or history_id, and keep the
+    # Takeout's label display names in takeout_labels.
+    source = models.CharField(max_length=10, default="api")  # api | takeout
+    takeout_labels = models.JSONField(default=list)
+
     raw_path = models.CharField(max_length=200)  # relative to settings.RAW_DIR
     fetched_at = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(auto_now=True)

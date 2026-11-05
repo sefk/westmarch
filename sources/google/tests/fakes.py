@@ -43,6 +43,8 @@ class FakeClient:
         self.page_size = page_size
         self.clock, self.tick = clock, tick
         self.history_id = "1000"
+        self.labels = [{"id": "INBOX", "name": "INBOX", "type": "system"},
+                       {"id": "Label_1", "name": "Receipts", "type": "user"}]
         self.history: list[dict] | int = []
         self.fetched: list[str] = []
         self.list_calls: list = []
@@ -65,12 +67,16 @@ class FakeClient:
                 "historyId": self.history_id}
 
     def gmail_labels(self):
-        return [{"id": "INBOX", "name": "INBOX", "type": "system"},
-                {"id": "Label_1", "name": "Receipts", "type": "user"}]
+        return self.labels
 
-    def gmail_list(self, token, include_spam_trash=False):
-        self.list_calls.append((token, include_spam_trash))
-        ids = sorted(self.messages, reverse=True)
+    def gmail_list(self, token, include_spam_trash=False, label_ids=None):
+        self.list_calls.append((token, include_spam_trash) if label_ids is None
+                               else (token, include_spam_trash, tuple(label_ids)))
+        if label_ids:
+            ids = sorted((i for i, m in self.messages.items() if set(label_ids) <= set(m["labelIds"])),
+                         reverse=True)
+        else:
+            ids = sorted(self.messages, reverse=True)
         start = int(token or 0)
         end = start + self.page_size
         return ids[start:end], (str(end) if end < len(ids) else None)

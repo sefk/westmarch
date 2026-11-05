@@ -109,6 +109,21 @@ against `messages_total`, `backfill_done`). A project that predates the
 change keeps the old limits (15,000 units a minute, 5 per message); for one
 of those set `GMAIL_UNITS_PER_MINUTE=15000` and `GMAIL_GET_RAW_UNITS=5`.
 
+**Seeding Gmail from Takeout.** At 100 messages a minute an API backfill
+of a large mailbox takes days. Instead, export Mail from
+[Google Takeout][takeout] and run
+`uv run manage.py gmail_import_takeout <takeout.zip>` (a bare `.mbox` works
+too). It streams the mbox straight out of the zip, so nothing is extracted
+to disk. The message and thread ids in a Takeout are the API's own, so it
+writes the same gzipped raw files and header rows, marked
+`source="takeout"`, with Takeout's label names in `takeout_labels`. Spam
+and Trash are skipped unless you pass `--include-spam-trash`, and anything
+already stored is skipped, so it is safe to rerun or stop at any point;
+`--limit N` does a trial run. No API quota is used. Then run
+`uv run manage.py gmail_sync_labels`: it uses only cheap id listings to set
+`label_ids` on every row and mark messages deleted since the export. The
+hourly backfill then fetches only what the Takeout lacks.
+
 After that each run applies Gmail's change history: new
 mail, label changes and deletions. Deleted messages keep their row and
 file, with `deleted_at` set. `manage.py load gmail --full` re-walks the
@@ -222,3 +237,4 @@ uv run pytest -q
 [prd]: docs/prd.md
 [gcp]: https://console.cloud.google.com/
 [hae]: https://www.healthyapps.dev/
+[takeout]: https://takeout.google.com/

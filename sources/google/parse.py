@@ -36,6 +36,15 @@ def write_raw(root: Path, gmail_id: str, raw: bytes) -> str:
     return rel
 
 
+def store_and_parse(root: Path, gmail_id: str, raw: bytes, write: bool = True) -> dict:
+    """write_raw (unless `write` is false) and parse_headers in one call:
+    the per-message work of the Takeout import, run in worker processes.
+    Kept here because this module doesn't import Django."""
+    if write:
+        write_raw(root, gmail_id, raw)
+    return parse_headers(raw)
+
+
 def read_raw(root: Path, rel: str) -> bytes:
     return gzip.decompress((root / rel).read_bytes())
 

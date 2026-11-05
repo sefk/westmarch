@@ -169,11 +169,15 @@ class GoogleClient:
     def gmail_labels(self) -> list[dict]:
         return self._exec(self.gmail.users().labels().list(userId="me"), "gmail").get("labels", [])
 
-    def gmail_list(self, page_token: str | None, include_spam_trash: bool = False) -> tuple[list[str], str | None]:
-        """One page of message ids (newest first) and the next page token."""
-        resp = self._exec(self.gmail.users().messages().list(
-            userId="me", maxResults=500, pageToken=page_token or None,
-            includeSpamTrash=include_spam_trash), "gmail", LIST_UNITS)
+    def gmail_list(self, page_token: str | None, include_spam_trash: bool = False,
+                   label_ids: list[str] | None = None) -> tuple[list[str], str | None]:
+        """One page of message ids (newest first) and the next page token;
+        only messages carrying all of `label_ids` when given."""
+        params = dict(userId="me", maxResults=500, pageToken=page_token or None,
+                      includeSpamTrash=include_spam_trash)
+        if label_ids:
+            params["labelIds"] = list(label_ids)
+        resp = self._exec(self.gmail.users().messages().list(**params), "gmail", LIST_UNITS)
         return [m["id"] for m in resp.get("messages", [])], resp.get("nextPageToken")
 
     def gmail_get_raw(self, ids: list[str]) -> dict[str, dict | None]:

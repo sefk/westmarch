@@ -27,9 +27,10 @@ since the last run, everything on `full=True`.
 
 from __future__ import annotations
 
-import logging
 import fcntl
+import logging
 import time
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -82,6 +83,32 @@ def _chunks(seq, n):
         yield seq[i:i + n]
 
 
+@contextmanager
+def gmail_lock(root):
+    """One quota-spending gmail run at a time: the hourly job and a
+    hand-started run (or label sync) would otherwise fight over the page
+    token and split the quota. Raises Disabled if another run holds it."""
+    lock = open(root / ".gmail.lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        lock.close()
+        raise Disabled("another gmail run is in progress") from None
+    try:
+        yield
+    finally:
+        lock.close()
+
+
+def gmail_root():
+    """settings.RAW_DIR, created; Disabled if its volume isn't mounted."""
+    root = settings.RAW_DIR
+    if not root.parent.exists():
+        raise Disabled(f"{root.parent} not mounted; raw mail lives in {root}")
+    root.mkdir(exist_ok=True)
+    return root
+
+
 # --------------------------------------------------------------------------
 # Gmail
 # --------------------------------------------------------------------------
@@ -95,29 +122,17 @@ class GmailLoader(Loader):
     clock = staticmethod(time.monotonic)
 
     def load(self, full: bool = False) -> int:
-        root = settings.RAW_DIR
-        if not root.parent.exists():
-            raise Disabled(f"{root.parent} not mounted; raw mail lives in {root}")
-        root.mkdir(exist_ok=True)
-        self.root = root
-        # One run at a time: the hourly job and a hand-started run would
-        # otherwise fight over the page token and split the quota.
-        lock = open(root / ".gmail.lock", "w")
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            lock.close()
-            raise Disabled("another gmail run is in progress") from None
-        client = get_client(self)
-        self.deadline = self.clock() + self.budget_seconds
-        try:
-            return self._load(client, full)
-        except ApiDisabled as exc:
-            raise api_disabled(exc) from None
-        finally:
-            lock.close()
-            self.state_set("messages_stored", str(GmailMessage.objects.count()))
-            self.state_set("parse_errors", str(GmailMessage.objects.exclude(parse_error="").count()))
+        self.root = gmail_root()
+        with gmail_lock(self.root):
+            client = get_client(self)
+            self.deadline = self.clock() + self.budget_seconds
+            try:
+                return self._load(client, full)
+            except ApiDisabled as exc:
+                raise api_disabled(exc) from None
+            finally:
+                self.state_set("messages_stored", str(GmailMessage.objects.count()))
+                self.state_set("parse_errors", str(GmailMessage.objects.exclude(parse_error="").count()))
 
     def _load(self, client, full):
         self.refresh_labels(client)
@@ -284,6 +299,65 @@ class GmailLoader(Loader):
         self.state_set("backfill_page_token", "")
         self.state_set("reconciled", timezone.now().isoformat())
         return rows
+
+    # -- label sync ----------------------------------------------------------
+
+    def sync_labels(self) -> dict:
+        """Refresh label_ids on every stored row and mark rows gone from
+        Gmail as deleted, by listing ids only (5 units per 500), never
+        fetching messages. Meant for after a Takeout import, whose rows
+        carry label names but no label ids. Takes the gmail lock."""
+        root = gmail_root()
+        with gmail_lock(root):
+            client = get_client(self)
+            try:
+                return self._sync_labels(client)
+            except ApiDisabled as exc:
+                raise api_disabled(exc) from None
+
+    def _list_all(self, client, label_id=None) -> set[str]:
+        ids, token = set(), None
+        while True:
+            page, token = client.gmail_list(token, include_spam_trash=True, label_ids=[label_id] if label_id else None)
+            ids.update(page)
+            if not token:
+                return ids
+
+    def _sync_labels(self, client) -> dict:
+        self.refresh_labels(client)
+        present = self._list_all(client)
+        by_id: dict[str, list[str]] = {}
+        for label_id in GmailLabel.objects.order_by("label_id").values_list("label_id", flat=True):
+            for mid in self._list_all(client, label_id):
+                by_id.setdefault(mid, []).append(label_id)
+
+        now = timezone.now()
+        stored = list(GmailMessage.objects.values_list("pk", "gmail_id", "label_ids", "deleted_at"))
+        stored_ids = {gid for _, gid, _, _ in stored}
+        changed, gone, back = [], [], []
+        for pk, gid, labels, deleted_at in stored:
+            if gid not in present:
+                if deleted_at is None:
+                    gone.append(pk)  # keep its last known labels
+                continue
+            if deleted_at is not None:
+                back.append(pk)
+            new = by_id.get(gid, [])
+            if sorted(labels or []) != new:
+                changed.append(GmailMessage(pk=pk, label_ids=new, updated=now))
+        for chunk in _chunks(changed, 500):
+            with transaction.atomic():
+                GmailMessage.objects.bulk_update(chunk, ["label_ids", "updated"])
+        for pks, value in ((gone, now), (back, None)):
+            for chunk in _chunks(pks, 500):
+                GmailMessage.objects.filter(pk__in=chunk).update(deleted_at=value, updated=now)
+
+        result = dict(present=len(present), stored=len(stored), labels_updated=len(changed),
+                      deleted=len(gone), undeleted=len(back), missing=len(present - stored_ids))
+        self.state_set("missing_after_takeout", str(result["missing"]))
+        self.state_set("labels_synced", now.isoformat())
+        logger.info("gmail label sync: %s", result)
+        return result
 
 
 # --------------------------------------------------------------------------

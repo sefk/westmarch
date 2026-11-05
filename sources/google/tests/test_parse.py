@@ -57,3 +57,12 @@ def test_raw_round_trip(tmp_path):
     assert [p.name for p in (tmp_path / "gmail" / "18").iterdir()] == ["18c0ffee00000001.eml.gz"]  # no temp left
     write_raw(tmp_path, "18c0ffee00000001", b"replaced")
     assert read_raw(tmp_path, rel) == b"replaced"
+
+
+def test_raw_non_ascii_header_bytes_are_storable():
+    raw = b"From: Caf\xe9 Owner <a@example.com>\r\nSubject: caf\xe9 \xff\x00 menu\r\nTo: b@example.com\r\n\r\nhi"
+    out = parse_headers(raw)
+    for v in (out["subject"], out["from_name"], out["from_address"], out["parse_error"], *out["to"]):
+        v.encode("utf-8")  # no lone surrogates
+        assert "\x00" not in v
+    assert "menu" in out["subject"] and out["from_address"] == "a@example.com"

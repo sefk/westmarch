@@ -66,7 +66,7 @@ def parse_headers(raw: bytes) -> dict:
     try:
         msg = BytesParser(policy=policy.default).parsebytes(raw)
     except Exception as exc:  # the parser is lenient; this is rare
-        return out | {"parse_error": f"message: {type(exc).__name__}: {exc}"[:500]}
+        return _clean(out | {"parse_error": f"message: {type(exc).__name__}: {exc}"[:500]})
 
     def get(name):
         try:
@@ -120,4 +120,22 @@ def parse_headers(raw: bytes) -> dict:
     # the header row; they're only noted alongside a header problem.
     defects = [type(d).__name__ for d in getattr(msg, "defects", [])]
     out["parse_error"] = "; ".join(dict.fromkeys(errors + defects))[:500] if errors else ""
-    return out
+    return _clean(out)
+
+
+def _clean(value):
+    """Headers with raw non-ASCII bytes come out of the email package as
+    lone surrogates, and NULs turn up too; SQLite accepts neither. Replace
+    them (the raw file keeps the original bytes)."""
+    if isinstance(value, str):
+        value = value.replace("\x00", "")
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError:
+            value = value.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+        return value
+    if isinstance(value, dict):
+        return {k: _clean(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_clean(v) for v in value]
+    return value

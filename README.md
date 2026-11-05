@@ -70,19 +70,28 @@ Each needs one unlock step from a human. Until then its loader reports
 Read-only: scopes are gmail.readonly, calendar.readonly and
 tasks.readonly. Nothing is ever sent, labelled, moved or deleted in Google.
 
-One-time setup:
+One-time setup, with a Google Cloud project and OAuth client of its own
+(not shared with any other project):
 
-1. In the [Google Cloud console][gcp], use a project with the Gmail API,
-   Google Calendar API and Google Tasks API enabled, and an OAuth client ID
-   of type **Desktop app**. Download its JSON to
-   `secrets/google-client.json` (or set `GOOGLE_CLIENT_FILE`). The client
-   wrgpt-buddy already uses works too.
-2. Run `uv run manage.py google_auth`. A browser opens for consent and the
-   token is saved to `secrets/google-token.json` (mode 0600, gitignored).
-   The command prints the account, the message count, and whether Calendar
-   and Tasks respond; if an API isn't enabled it prints the URL that
-   enables it.
-3. `manage.py google_auth --check` re-checks without a browser; `--force`
+1. In the [Google Cloud console][gcp], create a project and enable the
+   Gmail API, Google Calendar API and Google Tasks API.
+2. Configure the consent screen: audience **External**. Then **publish**
+   it (Audience, Publish app). In Testing, refresh tokens expire after 7
+   days and the loaders go "disabled" weekly. The Publish button stays
+   greyed out until the branding page has a home page, privacy policy and
+   terms of service URL; any URL on a domain you own will do. Do not
+   submit for verification and do not upload a logo; an unverified app
+   works for its owner.
+3. Clients, Create client, type **Desktop app**. Download the JSON at
+   creation time to `secrets/google-client.json` (or set
+   `GOOGLE_CLIENT_FILE`).
+4. Run `uv run manage.py google_auth`. A browser opens; click through the
+   "Google hasn't verified this app" warning (Advanced, Go to ...) and tick
+   all three permission boxes. The token is saved to
+   `secrets/google-token.json` (mode 0600, gitignored). The command prints
+   the account, the message count, and whether Calendar and Tasks respond;
+   if an API isn't enabled it prints the URL that enables it.
+5. `manage.py google_auth --check` re-checks without a browser; `--force`
    consents again.
 
 **Gmail** mirrors the whole mailbox. Each raw message is stored

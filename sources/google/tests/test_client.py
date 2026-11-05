@@ -116,3 +116,19 @@ def test_throttle_paces_to_the_per_minute_quota(monkeypatch, settings):
     c._throttle(60 * 25)  # one batch of 25 raw gets: free, the bucket was empty
     c._throttle(60 * 25)  # the next must wait about 25 messages' worth: 25 / 90 per minute
     assert not sleeps[:-1] and 16 < sleeps[-1] < 17
+
+
+def test_network_errors_are_retried(monkeypatch):
+    monkeypatch.setattr(client_mod, "sleep", lambda s: None)
+
+    class Flaky:
+        calls = 0
+
+        def execute(self):
+            Flaky.calls += 1
+            if Flaky.calls < 3:
+                raise OSError(65, "No route to host")
+            return {"ok": True}
+
+    assert GoogleClient(creds=object())._exec(Flaky(), "gmail") == {"ok": True}
+    assert Flaky.calls == 3

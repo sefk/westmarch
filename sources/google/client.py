@@ -22,6 +22,7 @@ import logging
 import re
 import time
 
+import httplib2
 from django.conf import settings
 
 from .auth import load_credentials, service
@@ -118,7 +119,11 @@ def translate(exc, api: str = ""):
 
 
 def retryable(exc) -> bool:
-    return isinstance(exc, RateLimited) or (isinstance(exc, GoogleApiError) and exc.status >= 500)
+    """Rate limits, server errors, and network trouble (a dropped route, a
+    reset connection, a timeout): a long listing must survive a blip."""
+    if isinstance(exc, GoogleApiError):
+        return isinstance(exc, RateLimited) or exc.status >= 500
+    return isinstance(exc, (OSError, httplib2.HttpLib2Error))
 
 
 class GoogleClient:

@@ -1,6 +1,9 @@
+import shutil
 import sqlite3
+import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from django.test import override_settings
@@ -150,3 +153,71 @@ def test_disabled(tmp_path):
     assert run.ok and run.message.startswith("disabled:")
     import os
     assert os.path.realpath(sys.executable) in run.message
+
+
+# --- snapshot helper -------------------------------------------------------
+
+
+def fake_helper(tmp_path, body):
+    p = tmp_path / "helper"
+    p.write_text("#!/bin/sh\n" + body + "\n")
+    p.chmod(0o755)
+    return p
+
+
+@pytest.fixture
+def snap(tmp_path, settings):
+    """Helper-mode settings: no IMESSAGE_DB, RAW_DIR under tmp_path."""
+    settings.IMESSAGE_DB = None
+    settings.RAW_DIR = tmp_path / "raw"
+    settings.IMESSAGE_SNAPSHOT = settings.RAW_DIR / "imessage" / "chat.db"
+    settings.IMESSAGE_SNAPSHOT_BIN = tmp_path / "helper"
+    return settings
+
+
+def test_helper_snapshot_is_read(tmp_path, snap):
+    src = tmp_path / "source.db"
+    con = make_db(src)
+    add(con, 1, 1, text="from snapshot")
+    con.close()
+    fake_helper(tmp_path, f'cp "{src}" "$1"')
+    assert IMessageLoader().load() == 1
+    assert Message.objects.get().text == "from snapshot"
+
+
+def test_helper_missing(snap):
+    with pytest.raises(Disabled, match="bin/build-imessage-snapshot"):
+        IMessageLoader().load()
+
+
+def test_helper_no_fda(tmp_path, snap):
+    fake_helper(tmp_path, "echo 'imessage-snapshot: authorization denied' >&2; exit 77")
+    with pytest.raises(Disabled, match="Full Disk Access"):
+        IMessageLoader().load()
+
+
+def test_helper_other_failure(tmp_path, snap):
+    fake_helper(tmp_path, "echo 'imessage-snapshot: disk I/O error' >&2; exit 1")
+    with pytest.raises(RuntimeError, match="exited 1: imessage-snapshot: disk I/O error"):
+        IMessageLoader().load()
+    run = run_loader(IMessageLoader())
+    assert not run.ok
+
+
+def test_raw_dir_not_mounted(tmp_path, snap):
+    fake_helper(tmp_path, "exit 0")
+    snap.RAW_DIR = tmp_path / "not-mounted" / "life-metrics"
+    snap.IMESSAGE_SNAPSHOT = snap.RAW_DIR / "imessage" / "chat.db"
+    with pytest.raises(Disabled, match="not mounted"):
+        IMessageLoader().load()
+    assert not (tmp_path / "not-mounted").exists()
+
+
+@pytest.mark.skipif(shutil.which("cc") is None, reason="no C compiler")
+def test_helper_compiles_and_checks_args(tmp_path):
+    src = Path(__file__).resolve().parents[3] / "ops" / "imessage-snapshot" / "imessage-snapshot.c"
+    out = tmp_path / "imessage-snapshot"
+    subprocess.run(["cc", "-O2", "-Wall", "-Wextra", "-Werror", "-o", str(out), str(src), "-lsqlite3"], check=True)
+    for args in ([], ["a", "b"]):
+        res = subprocess.run([str(out), *args], capture_output=True)
+        assert res.returncode == 2 and b"usage" in res.stderr

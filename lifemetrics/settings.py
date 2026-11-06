@@ -151,8 +151,13 @@ GOOGLE_SCOPES = [
 GMAIL_UNITS_PER_MINUTE = int(os.environ.get("GMAIL_UNITS_PER_MINUTE", "6000"))
 GMAIL_GET_RAW_UNITS = int(os.environ.get("GMAIL_GET_RAW_UNITS", "60"))
 
-# iMessage: needs Full Disk Access for whatever process runs the loader.
-IMESSAGE_DB = Path(os.environ.get("IMESSAGE_DB", Path.home() / "Library" / "Messages" / "chat.db"))
+# iMessage: bin/build-imessage-snapshot builds a small helper, the only thing
+# granted Full Disk Access. The loader runs it to copy chat.db to
+# IMESSAGE_SNAPSHOT, then reads the copy. IMESSAGE_DB, when set, means "read
+# this file directly and skip the helper" (tests, or FDA granted to Python).
+IMESSAGE_SNAPSHOT_BIN = Path(os.environ.get("IMESSAGE_SNAPSHOT_BIN") or BASE_DIR / "var" / "bin" / "imessage-snapshot")
+IMESSAGE_SNAPSHOT = Path(os.environ.get("IMESSAGE_SNAPSHOT") or RAW_DIR / "imessage" / "chat.db")
+IMESSAGE_DB = Path(os.environ["IMESSAGE_DB"]) if os.environ.get("IMESSAGE_DB") else None
 
 # Apple Health: Health Auto Export POSTs to /ingest/health/ with this
 # token in the `X-Ingest-Token` header. Blank disables the endpoint.

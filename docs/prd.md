@@ -317,6 +317,12 @@ always-on host, replacing studio, is open.
 
 ## Decisions log
 
+**2026-11-06**
+
+- iMessage reads a snapshot, not chat.db: a small C helper is the only
+  binary granted Full Disk Access and copies the database into the raw
+  data directory; the loader needs no special permission.
+
 **2026-11-05**
 
 - Phase 2 loaders built ahead of their credentials: Google (Gmail,

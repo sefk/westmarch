@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Compile the iMessage snapshot helper to var/bin/imessage-snapshot.
+set -euo pipefail
+. "$(dirname "$0")/_common.sh"
+out="$ROOT/var/bin/imessage-snapshot"
+mkdir -p "$(dirname "$out")"
+cc -O2 -Wall -Wextra -o "$out" "$ROOT/ops/imessage-snapshot/imessage-snapshot.c" -lsqlite3
+echo "$out"
+echo "Add it under System Settings > Privacy & Security > Full Disk Access (the only thing that needs it)."
+echo "A rebuild changes the binary's ad hoc signature: remove and re-add the grant after rebuilding."

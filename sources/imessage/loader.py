@@ -1,5 +1,9 @@
 """iMessage: ~/Library/Messages/chat.db, read-only, incremental.
 
+A small helper (ops/imessage-snapshot, the only binary granted Full Disk
+Access) copies chat.db to settings.IMESSAGE_SNAPSHOT; the loader reads the
+copy. settings.IMESSAGE_DB, if set, is read directly and skips the helper.
+
 New rows come by `message.ROWID > cursor`. Edits, retractions and read
 receipts change old rows in place, so each run also re-reads rows dated in
 the trailing two days. Message text and handles are private and never
@@ -9,7 +13,9 @@ logged; run messages carry counts only.
 import json
 import os
 import sqlite3
+import subprocess
 import sys
+from pathlib import Path
 from datetime import datetime, timedelta, timezone as tz
 
 from django.conf import settings
@@ -22,6 +28,8 @@ APPLE_EPOCH = 978307200  # 2001-01-01 UTC
 BATCH = 2000
 CHUNK = 500  # stay under SQLite's variable limit
 REREAD = timedelta(days=2)
+SNAPSHOT_TIMEOUT = 600
+EX_NOPERM = 77  # helper exit code: Full Disk Access not granted
 
 REACTIONS = {2000: "love", 2001: "like", 2002: "dislike", 2003: "laugh", 2004: "emphasize", 2005: "question"}
 
@@ -90,15 +98,41 @@ class IMessageLoader(Loader):
     name = "imessage"
     cadence = "hourly"
 
+    def snapshot(self) -> str:
+        """Run the helper; return the path of the fresh snapshot."""
+        binary, dest = Path(settings.IMESSAGE_SNAPSHOT_BIN), Path(settings.IMESSAGE_SNAPSHOT)
+        if not binary.is_file():
+            raise Disabled("snapshot helper not built: run bin/build-imessage-snapshot")
+        raw = Path(settings.RAW_DIR)
+        root = raw if raw in dest.parents else dest.parent
+        if not root.parent.exists():
+            raise Disabled(f"{root.parent} not mounted; the iMessage snapshot lives in {dest}")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            res = subprocess.run([str(binary), str(dest)], capture_output=True, timeout=SNAPSHOT_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"snapshot helper timed out after {SNAPSHOT_TIMEOUT}s") from None
+        if res.returncode == EX_NOPERM:
+            raise Disabled("snapshot helper lacks Full Disk Access")
+        if res.returncode:
+            err = res.stderr.decode(errors="replace").strip().splitlines()
+            raise RuntimeError(f"snapshot helper exited {res.returncode}: {err[-1][:200] if err else 'no output'}")
+        return str(dest)
+
     def connect(self) -> sqlite3.Connection:
-        path = os.path.expanduser(str(settings.IMESSAGE_DB))
+        if settings.IMESSAGE_DB:
+            path = os.path.expanduser(str(settings.IMESSAGE_DB))
+        else:
+            path = self.snapshot()
         try:
             con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
             con.execute("PRAGMA table_info(message)").fetchall()  # opening is lazy; force it
         except sqlite3.Error:
-            raise Disabled(
-                f"cannot open {settings.IMESSAGE_DB}; grant Full Disk Access to {os.path.realpath(sys.executable)}"
-            ) from None
+            if settings.IMESSAGE_DB:
+                raise Disabled(
+                    f"cannot open {path}; grant Full Disk Access to {os.path.realpath(sys.executable)}"
+                ) from None
+            raise RuntimeError(f"cannot read snapshot {path}") from None
         return con
 
     @staticmethod

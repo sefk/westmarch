@@ -135,16 +135,28 @@ every list, including completed, hidden and deleted tasks.
 
 ### iMessage
 
-Mirrors `~/Library/Messages/chat.db` (override with `IMESSAGE_DB`) into
-Handle, Chat, Message and Attachment tables. The database is opened
-read-only; attachment files are never touched, only their metadata. Message
-text is stored but never logged; loader runs record counts only.
+Mirrors `~/Library/Messages/chat.db` into Handle, Chat, Message and
+Attachment tables. Attachment files are never touched, only their metadata.
+Message text is stored but never logged; loader runs record counts only.
 
-Setup: macOS protects chat.db, so grant Full Disk Access (System Settings,
-Privacy & Security, Full Disk Access) to the Python binary that runs the
-loader. `uv run manage.py load imessage` names the exact path in its
-"disabled" message. A uv Python upgrade changes that path and the grant has
-to be redone.
+Setup: macOS protects chat.db, so a tiny C helper
+(`ops/imessage-snapshot/imessage-snapshot.c`, about 80 lines) is the only
+thing granted Full Disk Access. It can read just that one database, copies
+it with the SQLite backup API into `$LIFE_RAW_DIR/imessage/chat.db`
+(`IMESSAGE_SNAPSHOT`), and the loader reads the copy with no special
+permission.
+
+1. `bin/build-imessage-snapshot` compiles it to `var/bin/imessage-snapshot`
+   (`IMESSAGE_SNAPSHOT_BIN`) and prints the path.
+2. Add that binary under System Settings, Privacy & Security, Full Disk
+   Access.
+3. Rebuilding changes the binary's ad hoc signature, so remove and re-add
+   the grant after every rebuild.
+
+Until then `uv run manage.py load imessage` reports itself disabled and says
+which step is missing. Setting `IMESSAGE_DB` instead reads that file
+directly and skips the helper (useful for tests, or if you grant Full Disk
+Access to the Python binary).
 
 Incremental by message ROWID, plus a re-read of the trailing two days so
 edits, unsends and read receipts update; `load imessage --full` rereads

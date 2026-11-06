@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone as tz
 
 from django.conf import settings
 
+from sources.imessage.spawn import run_disclaimed
 from core.loaders import Disabled, Loader
 
 from .models import Attachment, Chat, Handle, Message
@@ -109,14 +110,15 @@ class IMessageLoader(Loader):
             raise Disabled(f"{root.parent} not mounted; the iMessage snapshot lives in {dest}")
         dest.parent.mkdir(parents=True, exist_ok=True)
         try:
-            res = subprocess.run([str(binary), str(dest)], capture_output=True, timeout=SNAPSHOT_TIMEOUT)
+            # Disclaimed, so the grant on the helper itself is what counts.
+            code, stderr = run_disclaimed([str(binary), str(dest)], SNAPSHOT_TIMEOUT)
         except subprocess.TimeoutExpired:
             raise RuntimeError(f"snapshot helper timed out after {SNAPSHOT_TIMEOUT}s") from None
-        if res.returncode == EX_NOPERM:
+        if code == EX_NOPERM:
             raise Disabled("snapshot helper lacks Full Disk Access")
-        if res.returncode:
-            err = res.stderr.decode(errors="replace").strip().splitlines()
-            raise RuntimeError(f"snapshot helper exited {res.returncode}: {err[-1][:200] if err else 'no output'}")
+        if code:
+            err = stderr.decode(errors="replace").strip().splitlines()
+            raise RuntimeError(f"snapshot helper exited {code}: {err[-1][:200] if err else 'no output'}")
         return str(dest)
 
     def connect(self) -> sqlite3.Connection:

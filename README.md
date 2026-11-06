@@ -153,6 +153,12 @@ permission.
 3. Rebuilding changes the binary's ad hoc signature, so remove and re-add
    the grant after every rebuild.
 
+macOS normally charges a file read to the app at the top of the process
+tree (the terminal, or the launchd job), not to the binary doing it, so the
+loader starts the helper as its own "responsible process"
+(`sources/imessage/spawn.py`). Run by hand from a shell, the helper is
+denied unless the terminal itself has Full Disk Access.
+
 Until then `uv run manage.py load imessage` reports itself disabled and says
 which step is missing. Setting `IMESSAGE_DB` instead reads that file
 directly and skips the helper (useful for tests, or if you grant Full Disk

@@ -1,4 +1,11 @@
 # Shared helpers; sourced by the other bin/ scripts.
+# Nothing here runs as root: the scripts call sudo themselves where needed.
+# Under `sudo bin/install-launchd` the jobs would be installed to run as
+# root, which cannot read the data volume and leaves root-owned files.
+if [ "$(id -u)" = 0 ]; then
+  echo "$(basename "$0"): run this as yourself, not with sudo (it asks for sudo when it needs it)" >&2
+  exit 1
+fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UV=/opt/homebrew/bin/uv
 [ -x "$UV" ] || UV="$(command -v uv)"

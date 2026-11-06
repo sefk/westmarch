@@ -231,11 +231,11 @@ Code token from the login Keychain, which a system daemon cannot see:
 | `com.sefk.westmarch.load-session` | gui/uid | `bin/load session`: cadence `session` (Claude limits) | every hour, while logged in |
 
 ```sh
-bin/install-launchd          # render and load all four (sudo for the daemons)
+bin/install-launchd          # render and load all four; asks for sudo itself, do not prefix it
 bin/install-launchd --agent  # just the LaunchAgent, no sudo
 bin/deploy                   # uv sync, tests, migrate, restart web, wait for /health/
 bin/status                   # job state, web check, log tails, last run of every loader
-bin/uninstall-launchd        # sudo
+bin/uninstall-launchd        # asks for sudo itself
 ```
 
 Logs land in `var/log/`. A loader job ends with a `LOAD hourly OK` or

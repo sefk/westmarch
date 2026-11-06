@@ -39,7 +39,7 @@ def test_disabled_without_token(settings, raw_dir, tmp_path):
 
 
 def test_disabled_without_volume(settings, tmp_path):
-    settings.RAW_DIR = tmp_path / "not-mounted" / "life-metrics"
+    settings.RAW_DIR = tmp_path / "not-mounted" / "westmarch"
     with pytest.raises(Disabled, match="not mounted"):
         loader(FakeClient(2)).load()
     assert not settings.RAW_DIR.exists()

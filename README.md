@@ -1,8 +1,9 @@
-# life-metrics
+# westmarch
 
 A personal data warehouse and dashboard: what I work on and how, whether
 my AI subscriptions earn their keep, and later health, social, fun and
-money. See the [PRD][prd].
+money. Named for the Red Book of Westmarch, the record Sam keeps. See the
+[PRD][prd].
 
 One Django process, SQLite, Dogsheep-style loaders: one per source, raw
 rows kept, idempotent and incremental. agentsview and Grafana stay
@@ -95,8 +96,8 @@ One-time setup, with a Google Cloud project and OAuth client of its own
    consents again.
 
 **Gmail** mirrors the whole mailbox. Each raw message is stored
-gzip-compressed at `$LIFE_RAW_DIR/gmail/<xx>/<id>.eml.gz` (default
-`/Volumes/ext1/life-metrics`) with parsed headers in SQLite. The loader
+gzip-compressed at `$WESTMARCH_RAW_DIR/gmail/<xx>/<id>.eml.gz` (default
+`/Volumes/ext1/westmarch`) with parsed headers in SQLite. The loader
 reports disabled when the external volume isn't mounted.
 
 The first backfill is slow by Google's design. A Cloud project created on
@@ -142,7 +143,7 @@ Message text is stored but never logged; loader runs record counts only.
 Setup: macOS protects chat.db, so a tiny C helper
 (`ops/imessage-snapshot/imessage-snapshot.c`, about 80 lines) is the only
 thing granted Full Disk Access. It can read just that one database, copies
-it with the SQLite backup API into `$LIFE_RAW_DIR/imessage/chat.db`
+it with the SQLite backup API into `$WESTMARCH_RAW_DIR/imessage/chat.db`
 (`IMESSAGE_SNAPSHOT`), and the loader reads the copy with no special
 permission.
 
@@ -180,7 +181,7 @@ POSTs JSON to `http://<host>:8520/ingest/health/` with the header
 `X-Ingest-Token: $HEALTH_INGEST_TOKEN`. A blank token disables the endpoint
 (503).
 
-Each accepted body is kept gzipped under `$LIFE_RAW_DIR/health/YYYY/MM/`
+Each accepted body is kept gzipped under `$WESTMARCH_RAW_DIR/health/YYYY/MM/`
 (falling back to `var/health-raw/` when the external SSD is not mounted)
 and upserted into `Metric` (one row per metric, time and source; re-sent
 windows replace rather than duplicate), `SleepNight`, `Workout` and
@@ -224,10 +225,10 @@ Code token from the login Keychain, which a system daemon cannot see:
 
 | job | domain | does | when |
 |-----|--------|------|------|
-| `com.sefk.life-metrics.web` | system | gunicorn on `:8520` (`LIFE_PORT`) | always, restarted on crash |
-| `com.sefk.life-metrics.load-hourly` | system | `bin/load hourly`: loaders with cadence `hourly` | every hour |
-| `com.sefk.life-metrics.load-daily` | system | `bin/load daily`: cadence `daily`, then a full agentsview reload | 04:15 |
-| `com.sefk.life-metrics.load-session` | gui/uid | `bin/load session`: cadence `session` (Claude limits) | every hour, while logged in |
+| `com.sefk.westmarch.web` | system | gunicorn on `:8520` (`WESTMARCH_PORT`) | always, restarted on crash |
+| `com.sefk.westmarch.load-hourly` | system | `bin/load hourly`: loaders with cadence `hourly` | every hour |
+| `com.sefk.westmarch.load-daily` | system | `bin/load daily`: cadence `daily`, then a full agentsview reload | 04:15 |
+| `com.sefk.westmarch.load-session` | gui/uid | `bin/load session`: cadence `session` (Claude limits) | every hour, while logged in |
 
 ```sh
 bin/install-launchd          # render and load all four (sudo for the daemons)

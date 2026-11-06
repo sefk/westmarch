@@ -1,5 +1,5 @@
 [project]
-name = "life-metrics"
+name = "westmarch"
 version = "0.1.0"
 description = "Personal data warehouse and dashboard: work, AI usage, and later the rest of life."
 requires-python = ">=3.14"
@@ -20,6 +20,6 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "lifemetrics.settings"
+DJANGO_SETTINGS_MODULE = "westmarch.settings"
 python_files = ["test_*.py"]
 testpaths = ["tests", "core", "sources", "derive", "catalog"]

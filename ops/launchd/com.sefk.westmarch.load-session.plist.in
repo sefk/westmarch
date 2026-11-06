@@ -2,11 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.sefk.life-metrics.load-hourly</string>
-  <key>UserName</key><string>@USER@</string>
-  <key>GroupName</key><string>@GROUP@</string>
+  <key>Label</key><string>com.sefk.westmarch.load-session</string>
   <key>ProgramArguments</key>
-  <array><string>@ROOT@/bin/load</string><string>hourly</string></array>
+  <array><string>@ROOT@/bin/load</string><string>session</string></array>
   <key>WorkingDirectory</key><string>@ROOT@</string>
   <key>EnvironmentVariables</key>
   <dict>
@@ -16,7 +14,7 @@
   </dict>
   <key>RunAtLoad</key><true/>
   <key>StartInterval</key><integer>3600</integer>
-  <key>StandardOutPath</key><string>@LOG_DIR@/load-hourly.out.log</string>
-  <key>StandardErrorPath</key><string>@LOG_DIR@/load-hourly.err.log</string>
+  <key>StandardOutPath</key><string>@LOG_DIR@/load-session.out.log</string>
+  <key>StandardErrorPath</key><string>@LOG_DIR@/load-session.err.log</string>
 </dict>
 </plist>

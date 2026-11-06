@@ -1,4 +1,4 @@
-"""Django settings for life-metrics.
+"""Django settings for westmarch.
 
 One process on the always-on Mac, SQLite, no auth (it sits behind
 Tailscale / local-redirector). Secrets come from `.env` (gitignored).
@@ -16,7 +16,7 @@ load_dotenv(BASE_DIR / ".env")
 VAR_DIR = BASE_DIR / "var"
 LOG_DIR = VAR_DIR / "log"
 
-SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "life-metrics-lan-only-not-a-secret")
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "westmarch-lan-only-not-a-secret")
 DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
 ALLOWED_HOSTS = ["*"]
 
@@ -61,7 +61,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
 ]
 
-ROOT_URLCONF = "lifemetrics.urls"
+ROOT_URLCONF = "westmarch.urls"
 
 TEMPLATES = [
     {
@@ -76,7 +76,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "lifemetrics.wsgi.application"
+WSGI_APPLICATION = "westmarch.wsgi.application"
 
 DATABASES = {
     "default": {
@@ -103,17 +103,17 @@ WHITENOISE_AUTOREFRESH = True
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# --- life-metrics ---
+# --- westmarch ---
 
-SERVE_HOST = os.environ.get("LIFE_HOST", "0.0.0.0")
-SERVE_PORT = int(os.environ.get("LIFE_PORT", "8520"))
+SERVE_HOST = os.environ.get("WESTMARCH_HOST", "0.0.0.0")
+SERVE_PORT = int(os.environ.get("WESTMARCH_PORT", "8520"))
 GRAFANA_PORT = int(os.environ.get("GRAFANA_PORT", "3520"))
 
 # Where my code lives; the projects loader scans it for git checkouts.
-SRC_DIR = Path(os.environ.get("LIFE_SRC_DIR", Path.home() / "src"))
+SRC_DIR = Path(os.environ.get("WESTMARCH_SRC_DIR", Path.home() / "src"))
 # local-redirector's shares.toml supplies friendly names for projects.
 REDIRECTOR_SHARES = Path(
-    os.environ.get("LIFE_REDIRECTOR_SHARES", SRC_DIR / "local-redirector" / "shares.toml")
+    os.environ.get("WESTMARCH_REDIRECTOR_SHARES", SRC_DIR / "local-redirector" / "shares.toml")
 )
 
 # agentsview: installed package, running as a LaunchDaemon. Integrate via
@@ -133,7 +133,7 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
 # Bulk raw data (mail, health payloads) lives off the boot disk. A loader
 # that needs it reports itself disabled when the volume isn't mounted.
-RAW_DIR = Path(os.environ.get("LIFE_RAW_DIR", "/Volumes/ext1/life-metrics"))
+RAW_DIR = Path(os.environ.get("WESTMARCH_RAW_DIR", "/Volumes/ext1/westmarch"))
 
 # Google: a Desktop OAuth client and the token `manage.py google_auth`
 # writes. Read-only scopes; this project never sends or modifies anything.

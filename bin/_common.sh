@@ -5,21 +5,21 @@ UV=/opt/homebrew/bin/uv
 LOG_DIR="$ROOT/var/log"
 DAEMONS_DIR=/Library/LaunchDaemons
 SYS=system
-WEB_LABEL=com.sefk.life-metrics.web
-HOURLY_LABEL=com.sefk.life-metrics.load-hourly
-DAILY_LABEL=com.sefk.life-metrics.load-daily
+WEB_LABEL=com.sefk.westmarch.web
+HOURLY_LABEL=com.sefk.westmarch.load-hourly
+DAILY_LABEL=com.sefk.westmarch.load-daily
 LABELS=("$WEB_LABEL" "$HOURLY_LABEL" "$DAILY_LABEL")
 # Per-user LaunchAgent for loaders that need the login Keychain (cadence
 # "session"). Lives in gui/<uid>, so it only runs while you are logged in.
 AGENTS_DIR="$HOME/Library/LaunchAgents"
 GUI="gui/$(id -u)"
-SESSION_LABEL=com.sefk.life-metrics.load-session
+SESSION_LABEL=com.sefk.westmarch.load-session
 AGENT_LABELS=("$SESSION_LABEL")
 unset VIRTUAL_ENV
 
 load_env() {
   set -a; [ -f "$ROOT/.env" ] && . "$ROOT/.env"; set +a
-  PORT="${LIFE_PORT:-8520}"
+  PORT="${WESTMARCH_PORT:-8520}"
 }
 
 ensure_env() {

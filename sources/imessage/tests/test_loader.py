@@ -206,7 +206,7 @@ def test_helper_other_failure(tmp_path, snap):
 
 def test_raw_dir_not_mounted(tmp_path, snap):
     fake_helper(tmp_path, "exit 0")
-    snap.RAW_DIR = tmp_path / "not-mounted" / "life-metrics"
+    snap.RAW_DIR = tmp_path / "not-mounted" / "westmarch"
     snap.IMESSAGE_SNAPSHOT = snap.RAW_DIR / "imessage" / "chat.db"
     with pytest.raises(Disabled, match="not mounted"):
         IMessageLoader().load()

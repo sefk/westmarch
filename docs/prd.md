@@ -1,4 +1,4 @@
-# life-metrics
+# westmarch
 
 A personal data warehouse and dashboard for analyzing my life and work in
 retirement. Starts with work (how I use AI services and local AI, what
@@ -77,7 +77,7 @@ flowchart TB
   LLM <--> DERIVE
   DERIVE <--> DB
 
-  subgraph web["life-metrics server · Django under gunicorn, launchd, :8xxx"]
+  subgraph web["westmarch server · Django under gunicorn, launchd, :8xxx"]
     direction LR
     CAT[catalog pages<br/>the UI]
     MCP[MCP endpoint<br/>for Claude and other agents]
@@ -117,7 +117,7 @@ arrows are drilldown links from the catalog pages.
    LM Studio. Paid APIs only when deliberately chosen. A full mailbox is in
    scope, so this is a privacy rule, not only a cost rule.
 7. **Same operational shape as homepower and wrgpt-buddy.** Python, Django,
-   uv, gunicorn, system LaunchDaemon `com.sefk.life-metrics`, `tailscale
+   uv, gunicorn, system LaunchDaemon `com.sefk.westmarch`, `tailscale
    serve`, a share in local-redirector. No Docker.
 
 ### Tabs (the eventual shape of the home page)
@@ -271,7 +271,7 @@ always-on host, replacing studio, is open.
 
 - SQLite database in the repo's `var/`, backed up like homepower's.
 - Bulk raw data (email bodies and attachments, health exports) on
-  `/Volumes/ext1/life-metrics/` (1.8 TB, ~900 GB free).
+  `/Volumes/ext1/westmarch/` (1.8 TB, ~900 GB free).
 - Synology for large cold storage if needed; it's slow. Its
   `/Cloud/Google` Drive mirror is available as a read-only source.
 
@@ -312,13 +312,16 @@ always-on host, replacing studio, is open.
 - Which machine is the always-on host once the M5 arrives.
 - Whether Codex and Gemini expose any limit data programmatically.
 - API vs. Takeout for the initial Gmail backfill.
-- GitHub repo: create `sefk/life-metrics` now or after the skeleton.
+- GitHub repo: create `sefk/westmarch` now or after the skeleton.
 - Books source.
 
 ## Decisions log
 
 **2026-11-06**
 
+- Named westmarch, after the Red Book of Westmarch: the hobbits' record
+  of their own lives, which Sam finishes and keeps. Its main reader will
+  be the Samwise agent.
 - iMessage reads a snapshot, not chat.db: a small C helper is the only
   binary granted Full Disk Access and copies the database into the raw
   data directory; the loader needs no special permission.

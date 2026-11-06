@@ -5,6 +5,6 @@ set -euo pipefail
 . "$(dirname "$0")/_common.sh"
 cd "$ROOT"
 load_env
-exec "$UV" run --no-sync gunicorn lifemetrics.wsgi:application \
-  --bind "${LIFE_HOST:-0.0.0.0}:$PORT" --workers 2 --worker-class gthread --threads 4 --timeout 60 \
+exec "$UV" run --no-sync gunicorn westmarch.wsgi:application \
+  --bind "${WESTMARCH_HOST:-0.0.0.0}:$PORT" --workers 2 --worker-class gthread --threads 4 --timeout 60 \
   --access-logfile - --error-logfile -

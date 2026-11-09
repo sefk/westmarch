@@ -42,6 +42,7 @@ uv run manage.py load --all --full # ignore incremental cursors, reload everythi
 | gtasks | every Google Tasks list, read-only | daily |
 | imessage | the Messages database, read-only | hourly |
 | gmail | full mailbox mirror: raw messages on the external SSD, headers in SQLite, read-only | hourly |
+| mailindex | full-text index of mail bodies and attachments; OCR on the local model | hourly |
 | health | not a loader: Apple Health pushed to `/ingest/health/` by Health Auto Export | on push |
 
 Each loader lives in `sources/<name>/` with its own models, migrations and
@@ -133,6 +134,37 @@ mailbox and fetches anything missing.
 **Calendar** syncs every calendar's full history with per-calendar sync
 tokens; recurring events are stored once, not expanded. **Tasks** syncs
 every list, including completed, hidden and deleted tasks.
+
+### Mail text index (`mailindex`)
+
+`mailindex` (in `mailindex/`, run after gmail) makes every stored message
+searchable: body text (plain part, or the HTML part stripped) and the text
+of each attachment. It reads only the raw files, so everything it writes
+can be rebuilt.
+
+- **Documents** (PDF, Word, Excel, PowerPoint, old .doc/.rtf/.odt via
+  macOS `textutil`, text, CSV, HTML, attached emails) are read in worker
+  processes with ordinary libraries.
+- **Images and scanned PDFs** (first five pages) go to the local model for
+  OCR, `MAILINDEX_OCR_URL` / `MAILINDEX_OCR_MODEL` (default ds4 and
+  `qwen3.8-flash-next`). A non-loopback URL is refused, so mail never
+  leaves this machine. Images with no text get a one-line description.
+  Tiny images (logos, spacers) are skipped. If the server is down the OCR
+  pass stops and the next run retries; a file that fails three times is
+  marked `error`.
+- An attachment's text is stored once per distinct file (`AttachmentBlob`,
+  by sha256); `MailAttachment` is one row per attachment per message.
+  `mailindex_body_fts` and `mailindex_blob_fts` are FTS5 indexes beside the
+  text, kept in sync by triggers.
+
+Hourly runs are time-boxed (`MAILINDEX_RUN_SECONDS`, 20 minutes), newest
+mail first. For the first backfill run it by hand without a limit:
+
+```sh
+uv run manage.py mailindex --no-ocr --budget-minutes 0   # all text, no OCR
+uv run manage.py mailindex --budget-minutes 0            # then OCR until done
+uv run manage.py mailsearch quarterly invoice            # try it
+```
 
 ### iMessage
 

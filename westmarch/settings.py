@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "sources.imessage",
     "sources.health",
     "derive",
+    "mailindex",
     "catalog",
 ]
 
@@ -54,6 +55,7 @@ LOADERS = [
     # Last: the first Gmail backfill works for up to 50 minutes per run,
     # and nothing else should wait behind it.
     "sources.google.loader.GmailLoader",
+    "mailindex.loader.MailIndexLoader",  # text of what gmail just stored
 ]
 
 MIDDLEWARE = [
@@ -158,6 +160,15 @@ GMAIL_GET_RAW_UNITS = int(os.environ.get("GMAIL_GET_RAW_UNITS", "60"))
 IMESSAGE_SNAPSHOT_BIN = Path(os.environ.get("IMESSAGE_SNAPSHOT_BIN") or BASE_DIR / "var" / "bin" / "imessage-snapshot")
 IMESSAGE_SNAPSHOT = Path(os.environ.get("IMESSAGE_SNAPSHOT") or RAW_DIR / "imessage" / "chat.db")
 IMESSAGE_DB = Path(os.environ["IMESSAGE_DB"]) if os.environ.get("IMESSAGE_DB") else None
+
+# mailindex: searchable text of mail bodies and attachments, derived from
+# the raw files. OCR (images, scanned PDFs) runs on the local model only;
+# a non-loopback URL is refused. Hourly runs are time-boxed; the first
+# backfill is `manage.py mailindex --budget-minutes 0`.
+MAILINDEX_OCR_URL = os.environ.get("MAILINDEX_OCR_URL", "http://127.0.0.1:8765/v1")
+MAILINDEX_OCR_MODEL = os.environ.get("MAILINDEX_OCR_MODEL", "qwen3.8-flash-next")
+MAILINDEX_RUN_SECONDS = int(os.environ.get("MAILINDEX_RUN_SECONDS", str(20 * 60)))
+MAILINDEX_WORKERS = int(os.environ.get("MAILINDEX_WORKERS", str(max((os.cpu_count() or 4) - 2, 1))))
 
 # Apple Health: Health Auto Export POSTs to /ingest/health/ with this
 # token in the `X-Ingest-Token` header. Blank disables the endpoint.

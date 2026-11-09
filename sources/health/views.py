@@ -6,7 +6,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from .ingest import ingest_body
-from .models import IngestBatch, Metric, SleepNight, Workout
+from .models import IngestBatch, Metric, SleepNight, Workout, WorkoutRoutePoint
 
 MAX_BODY = 100 * 1024 * 1024
 
@@ -50,6 +50,8 @@ def status(request):
         "metric_points": Metric.objects.count(),
         "sleep_nights": SleepNight.objects.count(),
         "workouts": Workout.objects.count(),
+        "workouts_with_route": Workout.objects.filter(route_points__gt=0).count(),
+        "route_points": WorkoutRoutePoint.objects.count(),
         "batches": IngestBatch.objects.count(),
         "last_batch_at": batch.received_at.isoformat() if batch else None,
         "metrics": out,

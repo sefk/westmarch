@@ -9,11 +9,12 @@ from datetime import datetime, timezone as dt_timezone
 from pathlib import Path
 
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone
 
 from core.models import LoaderRun
 
-from .models import IngestBatch, Metric, SleepNight, Workout
+from .models import IngestBatch, Metric, SleepNight, Workout, WorkoutRoutePoint
 
 log = logging.getLogger(__name__)
 CHUNK = 500
@@ -124,6 +125,32 @@ def _energy_kcal(v):
     return q
 
 
+def _route_points(route):
+    """Health Auto Export route list -> unsaved WorkoutRoutePoints (no
+    workout yet), deduped by time. v2 uses latitude/longitude/timestamp,
+    v1 lat/lon. Returns (points, skipped)."""
+    points, skipped = {}, 0
+    for pt in route:
+        if not isinstance(pt, dict):
+            skipped += 1
+            continue
+        at = parse_date(pt.get("timestamp") or pt.get("date"))
+        lat = num(pt.get("latitude", pt.get("lat")))
+        lon = num(pt.get("longitude", pt.get("lon")))
+        if at is None or lat is None or lon is None or not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            skipped += 1
+            continue
+        points[at] = WorkoutRoutePoint(
+            at=at, lat=lat, lon=lon,
+            altitude=num(pt.get("altitude")),
+            speed=num(pt.get("speed")),
+            course=num(pt.get("course")),
+            h_accuracy=num(pt.get("horizontalAccuracy")),
+            v_accuracy=num(pt.get("verticalAccuracy")),
+        )
+    return list(points.values()), skipped
+
+
 def _workout_row(w):
     start = parse_date(w.get("start"))
     if start is None:
@@ -152,7 +179,7 @@ def _workout_row(w):
         max_heart_rate=num(w.get("maxHeartRate", hr.get("max"))),
         is_indoor=indoor if isinstance(indoor, bool) else None,
         location=loc if isinstance(loc, str) else "",
-        raw=w,
+        raw={k: v for k, v in w.items() if k != "route"},
     )
 
 
@@ -163,10 +190,11 @@ def _flush(model, rows, unique, update):
         )
 
 
+@transaction.atomic
 def ingest_payload(payload, *, sha256="", size=0, raw_path="") -> dict:
     """Upsert a decoded payload. Returns {"metrics", "workouts", "skipped"}."""
     data = payload.get("data", payload) if isinstance(payload, dict) else {}
-    metrics, sleeps, workouts, skipped = {}, {}, {}, 0
+    metrics, sleeps, workouts, routes, skipped = {}, {}, {}, {}, 0
     for m in data.get("metrics") or []:
         if not isinstance(m, dict) or not m.get("name"):
             skipped += 1
@@ -197,6 +225,19 @@ def ingest_payload(payload, *, sha256="", size=0, raw_path="") -> dict:
             workouts[row.external_id] = row
         except Exception:
             skipped += 1
+            continue
+        if isinstance(w.get("route"), list) and w["route"]:
+            pts, bad = _route_points(w["route"])
+            skipped += bad
+            if pts:
+                routes[row.external_id] = pts
+                row.route_points = len(pts)
+
+    # A re-send without a route must not zero a count already stored.
+    have = dict(Workout.objects.filter(external_id__in=workouts).values_list("external_id", "route_points"))
+    for ext, row in workouts.items():
+        if ext not in routes:
+            row.route_points = have.get(ext, 0)
 
     _flush(Metric, list(metrics.values()), ["name", "at", "source"], ["units", "qty", "fields"])
     _flush(
@@ -211,14 +252,26 @@ def ingest_payload(payload, *, sha256="", size=0, raw_path="") -> dict:
         list(workouts.values()),
         ["external_id"],
         ["name", "start", "end", "duration_seconds", "active_energy_kcal", "distance", "distance_units",
-         "avg_heart_rate", "max_heart_rate", "is_indoor", "location", "raw"],
+         "avg_heart_rate", "max_heart_rate", "is_indoor", "location", "route_points", "raw"],
     )
+    n_route = 0
+    if routes:
+        ids = dict(Workout.objects.filter(external_id__in=routes).values_list("external_id", "id"))
+        WorkoutRoutePoint.objects.filter(workout_id__in=ids.values()).delete()
+        rows = []
+        for ext, pts in routes.items():
+            for p in pts:
+                p.workout_id = ids[ext]
+            rows += pts
+        for i in range(0, len(rows), CHUNK):
+            WorkoutRoutePoint.objects.bulk_create(rows[i : i + CHUNK])
+        n_route = len(rows)
     n_metrics = len(metrics) + len(sleeps)
     IngestBatch.objects.create(
         received_at=timezone.now(), sha256=sha256, bytes=size, metric_points=n_metrics,
-        workouts=len(workouts), skipped=skipped, raw_path=raw_path,
+        workouts=len(workouts), route_points=n_route, skipped=skipped, raw_path=raw_path,
     )
-    return {"metrics": n_metrics, "workouts": len(workouts), "skipped": skipped}
+    return {"metrics": n_metrics, "workouts": len(workouts), "route_points": n_route, "skipped": skipped}
 
 
 def ingest_body(body: bytes, *, store_raw=True, raw_path="") -> dict:
@@ -239,7 +292,8 @@ def ingest_body(body: bytes, *, store_raw=True, raw_path="") -> dict:
         run.save()
         raise
     run.ok, run.finished = True, timezone.now()
-    run.rows = result["metrics"] + result["workouts"]
-    run.message = f"{result['metrics']} points, {result['workouts']} workouts, {result['skipped']} skipped"
+    run.rows = result["metrics"] + result["workouts"] + result["route_points"]
+    run.message = (f"{result['metrics']} points, {result['workouts']} workouts, "
+                   f"{result['route_points']} route points, {result['skipped']} skipped")
     run.save()
     return result

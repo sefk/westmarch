@@ -217,8 +217,10 @@ POSTs JSON to `http://<host>:8520/ingest/health/` with the header
 Each accepted body is kept gzipped under `$WESTMARCH_RAW_DIR/health/YYYY/MM/`
 (falling back to `var/health-raw/` when the external SSD is not mounted)
 and upserted into `Metric` (one row per metric, time and source; re-sent
-windows replace rather than duplicate), `SleepNight`, `Workout` and
-`IngestBatch`. Each ingest also shows up as a `health` row in the loader
+windows replace rather than duplicate), `SleepNight`, `Workout`,
+`WorkoutRoutePoint` (the GPS track of an outdoor workout, one row per fix)
+and `IngestBatch`. A re-sent workout with a route replaces its points; one
+sent without a route keeps them. Each ingest also shows up as a `health` row in the loader
 table.
 
 Check that data is landing at `/ingest/health/status/` (counts and the
@@ -226,8 +228,9 @@ latest point per metric). Replay a saved payload, or backfill from a manual
 JSON export, with `uv run manage.py health_import file.json[.gz]`.
 
 Phone setup: two automations of type REST API (one for Health Metrics, one
-for Workouts), format JSON, export version 2, Batch Requests on, date range
-"Since Last Sync", Background App Refresh on, Low Power Mode off. Syncs
+for Workouts, with Include Route Data on), format JSON, export version 2,
+Batch Requests on, date range "Since Last Sync", Background App Refresh on,
+Low Power Mode off. Syncs
 only run while the phone is unlocked, and iOS may delay them.
 
 ## UI

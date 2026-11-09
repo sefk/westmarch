@@ -5,7 +5,7 @@ import pytest
 from django.core.management import call_command
 
 from core.models import LoaderRun
-from sources.health.models import IngestBatch, Metric, SleepNight, Workout
+from sources.health.models import IngestBatch, Metric, SleepNight, Workout, WorkoutRoutePoint
 
 pytestmark = pytest.mark.django_db
 URL = "/ingest/health/"
@@ -36,7 +36,7 @@ def test_auth(client, settings):
     assert post(client, steps(), token="wrong").status_code == 401
     assert client.get(URL).status_code == 405
     r = post(client, steps())
-    assert r.status_code == 200 and r.json() == {"ok": True, "metrics": 1, "workouts": 0, "skipped": 0}
+    assert r.status_code == 200 and r.json() == {"ok": True, "metrics": 1, "workouts": 0, "route_points": 0, "skipped": 0}
     assert TOKEN not in r.content.decode()
     settings.HEALTH_INGEST_TOKEN = ""
     assert post(client, steps()).status_code == 503
@@ -133,3 +133,54 @@ def test_import_command(tmp_path):
     call_command("health_import", str(f))
     assert Metric.objects.get().qty == 7
     assert IngestBatch.objects.get().raw_path == str(f.resolve())
+
+
+def route(n=3, start_min=0, v1=False):
+    out = []
+    for i in range(n):
+        ts = f"2026-11-01 07:{start_min + i:02d}:00 -0800"
+        if v1:
+            out.append({"lat": 37.44 + i / 1000, "lon": -122.16, "altitude": 20, "timestamp": ts})
+        else:
+            out.append({"latitude": 37.44 + i / 1000, "longitude": -122.16, "altitude": 20 + i, "speed": 2.5,
+                        "course": 90, "horizontalAccuracy": 4, "verticalAccuracy": 3, "timestamp": ts})
+    return out
+
+
+def run_workout(**extra):
+    return {"id": "r1", "name": "Outdoor Walk", "start": "2026-11-01 07:00:00 -0800",
+            "end": "2026-11-01 07:30:00 -0800", **extra}
+
+
+def test_workout_route(client):
+    r = post(client, {"data": {"workouts": [run_workout(route=route(3) + [{"latitude": 999, "longitude": 0,
+                                                                          "timestamp": "2026-11-01 07:09:00 -0800"}])]}})
+    assert r.json()["route_points"] == 3 and r.json()["skipped"] == 1
+    w = Workout.objects.get()
+    assert w.route_points == 3 and "route" not in w.raw
+    p = w.route.first()
+    assert (p.lat, p.lon, p.altitude, p.speed, p.h_accuracy) == (37.44, -122.16, 20, 2.5, 4)
+    assert p.at.isoformat() == "2026-11-01T15:00:00+00:00"
+    assert IngestBatch.objects.get().route_points == 3
+
+
+def test_route_resend_replaces_and_routeless_resend_keeps(client):
+    post(client, {"data": {"workouts": [run_workout(route=route(3))]}})
+    post(client, {"data": {"workouts": [run_workout(route=route(5, start_min=10))]}})
+    w = Workout.objects.get()
+    assert WorkoutRoutePoint.objects.count() == 5 and w.route_points == 5
+    assert w.route.first().at.minute == 10
+    post(client, {"data": {"workouts": [run_workout(distance={"qty": 1.2, "units": "mi"})]}})
+    w.refresh_from_db()
+    assert WorkoutRoutePoint.objects.count() == 5 and w.route_points == 5 and w.distance == 1.2
+
+
+def test_route_v1_keys(client):
+    post(client, {"data": {"workouts": [run_workout(route=route(2, v1=True))]}})
+    assert WorkoutRoutePoint.objects.count() == 2
+
+
+def test_status_counts_routes(client):
+    post(client, {"data": {"workouts": [run_workout(route=route(4))]}})
+    d = client.get("/ingest/health/status/").json()
+    assert d["route_points"] == 4 and d["workouts_with_route"] == 1

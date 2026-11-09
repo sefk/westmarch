@@ -15,6 +15,7 @@ class IngestBatch(models.Model):
     bytes = models.BigIntegerField(default=0)
     metric_points = models.IntegerField(default=0)
     workouts = models.IntegerField(default=0)
+    route_points = models.IntegerField(default=0)
     skipped = models.IntegerField(default=0)
     raw_path = models.CharField(max_length=500, blank=True)
 
@@ -83,6 +84,8 @@ class Workout(models.Model):
     max_heart_rate = models.FloatField(null=True)
     is_indoor = models.BooleanField(null=True)
     location = models.CharField(max_length=50, blank=True)
+    route_points = models.IntegerField(default=0)
+    # The workout as sent, minus its GPS route (that lives in WorkoutRoutePoint).
     raw = models.JSONField(default=dict, blank=True)
 
     class Meta:
@@ -91,3 +94,26 @@ class Workout(models.Model):
 
     def __str__(self):
         return f"{self.name} {self.start:%Y-%m-%d %H:%M}"
+
+
+class WorkoutRoutePoint(models.Model):
+    """One GPS fix on a workout's route. A re-sent workout that carries a
+    route replaces its points; one without a route leaves them alone."""
+
+    workout = models.ForeignKey(Workout, on_delete=models.CASCADE, related_name="route")
+    at = models.DateTimeField()
+    lat = models.FloatField()
+    lon = models.FloatField()
+    altitude = models.FloatField(null=True)  # metres
+    speed = models.FloatField(null=True)
+    course = models.FloatField(null=True)
+    h_accuracy = models.FloatField(null=True)
+    v_accuracy = models.FloatField(null=True)
+
+    class Meta:
+        ordering = ["workout", "at"]
+        constraints = [models.UniqueConstraint(fields=["workout", "at"], name="uniq_health_route_point")]
+        indexes = [models.Index(fields=["at"])]
+
+    def __str__(self):
+        return f"{self.at:%Y-%m-%d %H:%M:%S} {self.lat:.5f},{self.lon:.5f}"

@@ -21,4 +21,4 @@ class Command(BaseCommand):
                 r = ingest_body(p.read_bytes(), store_raw=store_raw, raw_path="" if store_raw else str(p.resolve()))
             except ValueError as e:
                 raise CommandError(f"{p}: not valid JSON ({e})")
-            self.stdout.write(f"{p.name}: {r['metrics']} points, {r['workouts']} workouts, {r['skipped']} skipped")
+            self.stdout.write(f"{p.name}: {r['metrics']} points, {r['workouts']} workouts, {r['route_points']} route points, {r['skipped']} skipped")

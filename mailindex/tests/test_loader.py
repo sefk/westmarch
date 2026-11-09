@@ -23,7 +23,7 @@ def root(settings, tmp_path):
 
 
 def loader(ocr=None, budget=0, clock=None):
-    ld = MailIndexLoader(budget_seconds=budget, workers=0, ocr=True, ocr_client=ocr or FakeOcr())
+    ld = MailIndexLoader(budget_seconds=budget, workers=0, ocr=True, ocr_client=ocr or FakeOcr(), enabled=True)
     if clock:
         ld.clock = clock
     return ld
@@ -31,6 +31,14 @@ def loader(ocr=None, budget=0, clock=None):
 
 def state(key):
     return LoaderState.get("mailindex", key)
+
+
+def test_hourly_runs_wait_for_the_switch(settings, root):
+    settings.MAILINDEX_ENABLED = False
+    with pytest.raises(Disabled, match="MAILINDEX_ENABLED"):
+        MailIndexLoader().load()
+    settings.MAILINDEX_ENABLED = True
+    assert MailIndexLoader(ocr=False, workers=0).load() == 0
 
 
 def test_disabled_without_volume(settings, tmp_path):
@@ -152,7 +160,7 @@ def test_query_syntax_is_inert():
 def test_worker_processes(root):
     for n in range(1, 4):
         stored(root, n, email(n, body=f"pooled heron {n}", attachments=[("a.txt", "text", "plain", b"t%d" % n)]))
-    ld = MailIndexLoader(budget_seconds=0, workers=2, ocr=False)
+    ld = MailIndexLoader(budget_seconds=0, workers=2, ocr=False, enabled=True)
     assert ld.load() == 3
     assert len(search_mod.search("heron")["bodies"]) == 3
     assert MailAttachment.objects.count() == 3

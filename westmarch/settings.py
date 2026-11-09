@@ -164,7 +164,9 @@ IMESSAGE_DB = Path(os.environ["IMESSAGE_DB"]) if os.environ.get("IMESSAGE_DB") e
 # mailindex: searchable text of mail bodies and attachments, derived from
 # the raw files. OCR (images, scanned PDFs) runs on the local model only;
 # a non-loopback URL is refused. Hourly runs are time-boxed; the first
-# backfill is `manage.py mailindex --budget-minutes 0`.
+# backfill is `manage.py mailindex --budget-minutes 0`; hourly runs are off
+# until MAILINDEX_ENABLED=1.
+MAILINDEX_ENABLED = os.environ.get("MAILINDEX_ENABLED", "") == "1"
 MAILINDEX_OCR_URL = os.environ.get("MAILINDEX_OCR_URL", "http://127.0.0.1:8765/v1")
 MAILINDEX_OCR_MODEL = os.environ.get("MAILINDEX_OCR_MODEL", "qwen3.8-flash-next")
 MAILINDEX_RUN_SECONDS = int(os.environ.get("MAILINDEX_RUN_SECONDS", str(20 * 60)))

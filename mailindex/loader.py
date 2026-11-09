@@ -67,7 +67,10 @@ class MailIndexLoader(Loader):
     cadence = "hourly"
     clock = staticmethod(time.monotonic)
 
-    def __init__(self, budget_seconds=None, workers=None, ocr=True, ocr_client=None):
+    def __init__(self, budget_seconds=None, workers=None, ocr=True, ocr_client=None, enabled=None):
+        # Hourly runs only once MAILINDEX_ENABLED is set; `manage.py mailindex`
+        # passes enabled=True, so the backfill can be started by hand first.
+        self.enabled = enabled
         self.budget_seconds = budget_seconds if budget_seconds is not None else settings.MAILINDEX_RUN_SECONDS
         self.workers = workers if workers is not None else settings.MAILINDEX_WORKERS
         self.do_ocr = ocr
@@ -78,6 +81,8 @@ class MailIndexLoader(Loader):
         return self.budget_seconds > 0 and self.clock() >= self.deadline
 
     def load(self, full: bool = False) -> int:
+        if not (settings.MAILINDEX_ENABLED if self.enabled is None else self.enabled):
+            raise Disabled("set MAILINDEX_ENABLED=1 for hourly runs (after the first manage.py mailindex)")
         root = gmail_root()
         self.deadline = self.clock() + self.budget_seconds
         self.counts = dict(messages=0, attachments=0, blobs_new=0, ocr_done=0, ocr_failed=0)

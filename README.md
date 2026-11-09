@@ -158,7 +158,8 @@ can be rebuilt.
   text, kept in sync by triggers.
 
 Hourly runs are time-boxed (`MAILINDEX_RUN_SECONDS`, 20 minutes), newest
-mail first. For the first backfill run it by hand without a limit:
+mail first, and only once `MAILINDEX_ENABLED=1` is in `.env`. For the
+first backfill run it by hand without a limit, then turn it on:
 
 ```sh
 uv run manage.py mailindex --no-ocr --budget-minutes 0   # all text, no OCR

@@ -21,7 +21,8 @@ class Command(BaseCommand):
 
     def handle(self, *args, budget_minutes, workers, no_ocr, **opts):
         budget = None if budget_minutes is None else int(budget_minutes * 60)
-        run = run_loader(MailIndexLoader(budget_seconds=budget, workers=workers, ocr=not no_ocr))
+        run = run_loader(MailIndexLoader(budget_seconds=budget, workers=workers, ocr=not no_ocr,
+                                         enabled=True))
         self.stdout.write(run.message.splitlines()[0])
         for key in ("messages", "attachments", "blobs_new", "ocr_done", "ocr_failed", "ocr_stopped",
                     "messages_indexed", "messages_left", "ocr_left"):

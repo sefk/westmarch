@@ -260,6 +260,17 @@ departure, ...) are kept in `props`. The endpoint answers
 Check it at `/ingest/location/status/`; replay a saved payload with
 `uv run manage.py location_import file.json[.gz]`.
 
+**Google location history.** `uv run manage.py timeline_import <path>`
+loads any of Google's formats, streamed so size doesn't matter: the
+on-device Timeline export from Google Maps (iOS: Settings, Location,
+Location services, Timeline, Export; Android's variant too), or an old
+Takeout's `Records.json` and Semantic Location History. It takes a
+`.json`, `.json.gz`, a directory, or the Takeout `.zip` itself. Stays go to
+`Visit`, movement to `TripSegment` (mode, distance), and GPS fixes to
+`LocationPoint` under device ids `google-timeline`, `google-raw` and
+`google-records`, beside Overland's. Re-importing is idempotent, and each
+run is a `timeline` row in the loader table.
+
 Phone setup, in Overland's settings: Receiver Endpoint
 `http://<tailscale-host>:8520/ingest/location/`, Access Token the value of
 `LOCATION_INGEST_TOKEN`, then start tracking. Tailscale must be connected

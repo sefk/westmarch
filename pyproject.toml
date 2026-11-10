@@ -8,6 +8,7 @@ dependencies = [
     "google-api-python-client>=2.201.0",
     "google-auth-oauthlib>=1.5.0",
     "gunicorn>=23",
+    "ijson>=3.6.0",
     "openpyxl>=3.1.5",
     "pillow>=13.0.0",
     "pillow-heif>=1.8.1",

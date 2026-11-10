@@ -83,6 +83,10 @@ def subscriptions_data(request):
     return JsonResponse(subs.traces(_range(request)))
 
 
+def subscriptions_local(request):
+    return JsonResponse(subs.local_share(_range(request)))
+
+
 def _health_range(request):
     r = request.GET.get("range", hl.DEFAULT_RANGE)
     return r if r in hl.RANGES else hl.DEFAULT_RANGE

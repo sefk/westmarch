@@ -8,6 +8,7 @@ urlpatterns = [
     path("", views.home, name="home"),
     path("subscriptions/", views.subscriptions, name="subscriptions"),
     path("subscriptions/data/", views.subscriptions_data, name="subscriptions_data"),
+    path("subscriptions/local/", views.subscriptions_local, name="subscriptions_local"),
     path("projects/", views.projects, name="projects"),
     path("projects/data/", views.projects_data, name="projects_data"),
     path("projects/<int:pk>/", views.project, name="project"),

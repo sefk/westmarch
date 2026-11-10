@@ -310,12 +310,27 @@ always-on host, replacing studio, is open.
 ## Open questions
 
 - Which machine is the always-on host once the M5 arrives.
-- Whether Codex and Gemini expose any limit data programmatically.
 - API vs. Takeout for the initial Gmail backfill.
 - GitHub repo: create `sefk/westmarch` now or after the skeleton.
 - Books source.
 
 ## Decisions log
+
+**2026-11-09**
+
+- Gemini AI Pro (consumer, shared with family) exposes no usage or limit
+  data programmatically; its card shows plan and price only. Codex limits
+  come from its CLI session logs.
+- Local vs hosted model share is measured in output tokens, not dollars,
+  since local runs cost nothing. A model is local unless its name is a
+  paid vendor's (claude-, gpt-, codex-, gemini-, ...).
+- Health ingest stores workout GPS routes; a daily `HealthDay` rollup feeds
+  the Health page. Location arrives by Overland push and Google Timeline
+  imports; Photos metadata loads daily via osxphotos; a `geo` loader
+  derives where I was each day and trips.
+- The database is backed up nightly to ext1. The offsite (Synology) copy
+  waits on an encryption decision, since the database holds mail headers
+  and message text.
 
 **2026-11-06**
 

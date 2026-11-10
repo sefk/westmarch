@@ -117,3 +117,25 @@ def test_window_labels():
 
 def test_bar_level():
     assert [subs.bar_level(p) for p in (None, 10, 70, 71, 90, 91)] == ["", "ok", "ok", "warn", "warn", "critical"]
+
+
+def test_local_share(db):
+    from sources.agentsview.models import ModelUsage
+
+    now = timezone.now()
+    s1 = Session.objects.create(session_id="l1", agent="pi", project="x", started_at=now - timedelta(days=1))
+    s2 = Session.objects.create(session_id="h1", agent="claude", project="x", started_at=now - timedelta(days=1))
+    ModelUsage.objects.create(session=s1, model="qwen/qwen3.6-35b-a3b", output_tokens=300)
+    ModelUsage.objects.create(session=s2, model="claude-opus-5-5", output_tokens=700)
+    ModelUsage.objects.create(session=s2, model="gpt-5.6-sol", output_tokens=0)
+    assert subs.is_local("qwen3.8-flash-next") and subs.is_local("openai/gpt-oss-20b")
+    assert not subs.is_local("claude-haiku-4-5") and not subs.is_local("gpt-6-astra") and not subs.is_local("")
+    d = subs.local_share("7d", now)
+    assert d["bucket"] == "day" and sum(d["local"]) == 300 and sum(d["hosted"]) == 700
+    assert d["share"] == 0.3 and d["models"] == [("qwen/qwen3.6-35b-a3b", 300)]
+    assert subs.local_share("all", now)["bucket"] == "day"  # data spans < 31 days
+
+
+def test_local_share_empty(db, client):
+    assert subs.local_share("7d")["share"] is None
+    assert client.get("/subscriptions/local/?range=30d").json()["x"] == []

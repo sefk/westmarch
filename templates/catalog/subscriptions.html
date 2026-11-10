@@ -87,6 +87,13 @@ table.now td.bar-cell { width: 34%; }
 </section>
 {% endfor %}
 
+<section class="card" id="local">
+  <div class="card-head"><h2>Local vs hosted models</h2></div>
+  <p class="equiv" id="local-summary">&nbsp;</p>
+  <div class="chart" id="chart-local"></div>
+  <p class="small muted" style="margin:0">Output tokens. Local is anything not served by a paid vendor (LM Studio, ds4); measured in tokens because local runs cost nothing.</p>
+</section>
+
 <script>
 (function () {
   const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
@@ -156,6 +163,25 @@ table.now td.bar-cell { width: 34%; }
     layout.showlegend = true;
     Plotly.newPlot(el, plotTraces, layout, { displayModeBar: false, responsive: true });
   }
+
+  fetch("{% url 'catalog:subscriptions_local' %}?range={{ range|urlencode }}").then((r) => r.json()).then((d) => {
+    const el = document.getElementById("chart-local");
+    const sum = document.getElementById("local-summary");
+    if (!d.x.length) { el.style.height = "auto"; el.innerHTML = '<p class="small muted">No model usage in this range.</p>'; return; }
+    const fmtTok = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : String(n);
+    const share = d.share === null ? "-" : (d.share * 100).toFixed(d.share < 0.1 ? 1 : 0) + "%";
+    const top = d.models.map((m) => m[0] + " " + fmtTok(m[1])).join(", ");
+    sum.innerHTML = "Local share of output tokens in this range: <b>" + share + "</b>" + (top ? ". Top local models: " + top + "." : ".");
+    const surface = dark ? "#1a1a19" : "#fcfcfb";
+    const local = dark ? "#199e70" : "#1baf7a";
+    const layout = baseLayout("output tokens / " + d.bucket);
+    Object.assign(layout, { barmode: "stack", bargap: 0.15, barcornerradius: 3, showlegend: true });
+    layout.yaxis.rangemode = "tozero";
+    Plotly.newPlot(el, [
+      { x: d.x.map((s) => s + "T12:00:00"), y: d.hosted, name: "Hosted", type: "bar", marker: { color: colors[0], line: { color: surface, width: 1 } }, hovertemplate: "%{y:,.0f}<extra>Hosted</extra>" },
+      { x: d.x.map((s) => s + "T12:00:00"), y: d.local, name: "Local", type: "bar", marker: { color: local, line: { color: surface, width: 1 } }, hovertemplate: "%{y:,.0f}<extra>Local</extra>" },
+    ], layout, { displayModeBar: false, responsive: true });
+  });
 
   fetch("{% url 'catalog:subscriptions_data' %}?range={{ range|urlencode }}")
     .then((r) => r.json())

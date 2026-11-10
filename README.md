@@ -318,6 +318,7 @@ HTML; each chart fetches a JSON endpoint and draws it.
 | `/projects/<id>/` | one project: daily cost and commits, recent sessions linked to agentsview |
 | `/body/?range=90d` | "How am I doing physically?": last-7-day tiles, steps, sleep stages, resting HR, HRV, daylight, exercise, workouts per week by type, the workout list, and data coverage by month (`range` = `30d`, `90d`, `1y`, `all`) |
 | `/body/workouts/<id>/` | one workout: route map, elevation, heart rate. Map tiles load from CARTO; nothing else leaves the machine |
+| `/subscriptions/local/?range=7d` | local vs hosted output tokens per day or week, the local share, and top local models |
 | `/subscriptions/data/?range=7d` | the chart data: `{vendor: {traces: [{name, window, x, y, kind}]}}`, `kind` `pct` or `usd` |
 
 ## Running locally

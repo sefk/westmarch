@@ -249,3 +249,60 @@ def traces(range_key, now=None):
             {"name": window_label(vendor, window, s["limit"]), "window": window, "x": x, "y": y, "kind": kind}
         )
     return out
+
+
+# ---- local vs hosted models ------------------------------------------------
+
+# Model-name prefixes served by a paid vendor; anything else (qwen*, gpt-oss,
+# ...) ran on this machine under LM Studio or ds4.
+HOSTED_PREFIXES = ("claude-", "gpt-", "codex-", "gemini-", "o1", "o3", "o4", "anthropic/", "google/gemini")
+
+
+def is_local(model: str) -> bool:
+    m = (model or "").lower()
+    return bool(m) and not m.startswith(HOSTED_PREFIXES)
+
+
+def local_share(range_key, now=None):
+    """Output tokens per day (ranges up to 30 days) or week, local vs
+    hosted, plus the local share and top local models over the range.
+    Output tokens, not cost: local runs cost nothing, so dollars would hide
+    them."""
+    from sources.agentsview.models import ModelUsage
+
+    now = now or timezone.now()
+    start = range_start(range_key, now)
+    qs = ModelUsage.objects.filter(session__started_at__isnull=False)
+    if start is not None:
+        qs = qs.filter(session__started_at__gte=start)
+    rows = list(qs.values_list("session__started_at", "model", "output_tokens"))
+    if not rows:
+        return {"x": [], "local": [], "hosted": [], "bucket": "day", "share": None, "models": []}
+    first = min(r[0] for r in rows)
+    lo = timezone.localtime(start or first).date()
+    hi = timezone.localtime(now).date()
+    weekly = (hi - lo).days > 31
+    if weekly:
+        lo -= timedelta(days=lo.weekday())
+    n = (hi - lo).days // (7 if weekly else 1) + 1
+    local, hosted = [0] * n, [0] * n
+    by_model = {}
+    for at, model, out in rows:
+        i = (timezone.localtime(at).date() - lo).days // (7 if weekly else 1)
+        if not 0 <= i < n:
+            continue
+        if is_local(model):
+            local[i] += out
+            by_model[model] = by_model.get(model, 0) + out
+        else:
+            hosted[i] += out
+    total = sum(local) + sum(hosted)
+    step = timedelta(days=7 if weekly else 1)
+    return {
+        "x": [(lo + step * i).isoformat() for i in range(n)],
+        "local": local,
+        "hosted": hosted,
+        "bucket": "week" if weekly else "day",
+        "share": (sum(local) / total) if total else None,
+        "models": sorted(by_model.items(), key=lambda kv: -kv[1])[:6],
+    }

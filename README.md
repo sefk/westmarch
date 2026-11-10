@@ -314,6 +314,8 @@ HTML; each chart fetches a JSON endpoint and draws it.
 |-----|------|
 | `/` | the catalog: each analysis and the question it answers, plus the last run of every loader |
 | `/subscriptions/?range=7d` | "Am I making good use of my AI subscriptions?": per plan, the latest reading of every limit window, its history (`range` = `24h`, `7d`, `30d`, `all`), and agentsview's API-equivalent spend against the monthly price |
+| `/projects/?range=90d` | "What have I been working on, and how?": totals, per-project cost / sessions / commits per week (top six named, the rest Other, unmapped agentsview usage separate), cost by agent, when sessions start (weekday × hour), and a per-project table |
+| `/projects/<id>/` | one project: daily cost and commits, recent sessions linked to agentsview |
 | `/body/?range=90d` | "How am I doing physically?": last-7-day tiles, steps, sleep stages, resting HR, HRV, daylight, exercise, workouts per week by type, the workout list, and data coverage by month (`range` = `30d`, `90d`, `1y`, `all`) |
 | `/body/workouts/<id>/` | one workout: route map, elevation, heart rate. Map tiles load from CARTO; nothing else leaves the machine |
 | `/subscriptions/data/?range=7d` | the chart data: `{vendor: {traces: [{name, window, x, y, kind}]}}`, `kind` `pct` or `usd` |

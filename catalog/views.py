@@ -7,11 +7,17 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 
 from catalog import health as hl
+from catalog import projects as pj
 from catalog import subscriptions as subs
-from core.models import LoaderRun
+from core.models import LoaderRun, Project
 from sources.health.models import Workout
 
 CATALOG = [
+    {
+        "title": "Projects",
+        "url_name": "catalog:projects",
+        "question": "What have I been working on, and how?",
+    },
     {
         "title": "Subscriptions",
         "url_name": "catalog:subscriptions",
@@ -24,11 +30,6 @@ CATALOG = [
     },
 ]
 WAITING = [
-    {
-        "title": "Projects",
-        "question": "What have I been working on, and how?",
-        "why": "Waiting on the derive step that maps sessions, commits and tabs to projects.",
-    },
     {
         "title": "Data health",
         "question": "Is every loader running, and where are the gaps?",
@@ -112,3 +113,27 @@ def workout_data(request, pk):
 
 def health_coverage(request):
     return JsonResponse(hl.coverage())
+
+
+def _projects_range(request):
+    r = request.GET.get("range", pj.DEFAULT_RANGE)
+    return r if r in pj.RANGES else pj.DEFAULT_RANGE
+
+
+def projects(request):
+    r = _projects_range(request)
+    return render(request, "catalog/projects.html",
+                  {"section": "projects", "range": r, "ranges": list(pj.RANGES), "t": pj.table(r)})
+
+
+def projects_data(request):
+    return JsonResponse(pj.series(_projects_range(request)))
+
+
+def project(request, pk):
+    p = get_object_or_404(Project, pk=pk)
+    r = _projects_range(request)
+    d = pj.project_detail(p, r, request_host=request.get_host())
+    return render(request, "catalog/project.html",
+                  {"section": "projects", "p": p, "range": r, "ranges": list(pj.RANGES), "d": d,
+                   "chart": {"x": d["x"], "cost": d["cost"], "commits": d["commits"]}})

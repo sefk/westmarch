@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Projects{% endblock %}
+
+{% block head %}
+<script src="{% static 'vendor/plotly.min.js' %}"></script>
+<style>
+.page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.page-head h1 { margin: 0; }
+.pills { display: flex; gap: 0.25rem; font-size: 0.85rem; flex-wrap: wrap; }
+.pills a, .pills button {
+  color: var(--ink-2); text-decoration: none; background: none; font: inherit; cursor: pointer;
+  padding: 0.15rem 0.6rem; border: 1px solid var(--border); border-radius: 999px;
+}
+.pills .active { color: var(--ink); border-color: var(--series-1); font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.9rem; }
+.tile .label { font-size: 0.8rem; color: var(--ink-2); }
+.tile .value { font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
+.card .sub { font-size: 0.8rem; color: var(--muted); margin: 0.15rem 0 0.25rem; }
+.chart { width: 100%; height: 300px; }
+.chart.short { height: 240px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 1.25rem; margin-bottom: 1.25rem; }
+.grid2 .card { margin-bottom: 0; min-width: 0; }
+.scroll { overflow-x: auto; }
+table.projects { width: 100%; }
+table.projects td, table.projects th { white-space: nowrap; }
+table.projects td.name, table.projects th.name { text-align: left; }
+table.projects td.name a { color: var(--ink); }
+.lines { color: var(--muted); font-size: 0.78rem; }
+@media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>What have I been working on, and how?</h1>
+  <nav class="pills" aria-label="Range">
+    {% for r in ranges %}<a href="?range={{ r }}" class="{% if r == range %}active{% endif %}">{{ r }}</a>{% endfor %}
+  </nav>
+</div>
+
+<div class="tiles">
+  <div class="tile"><div class="label">Projects active</div><div class="value">{{ t.totals.projects }}</div></div>
+  <div class="tile"><div class="label">Agent sessions</div><div class="value">{{ t.totals.sessions|floatformat:"0g" }}</div></div>
+  <div class="tile"><div class="label">API-equivalent</div><div class="value">${{ t.totals.cost_usd|floatformat:"0g" }}</div></div>
+  <div class="tile"><div class="label">Commits</div><div class="value">{{ t.totals.all_commits|floatformat:"0g" }}</div></div>
+  <div class="tile"><div class="label">PRs merged</div><div class="value">{{ t.totals.gh_prs_merged|floatformat:"0g" }}</div></div>
+</div>
+
+<section class="card">
+  <div class="card-head">
+    <h2>By project</h2>
+    <nav class="pills" id="metric" aria-label="Metric">
+      <button data-m="cost" class="active">cost</button><button data-m="sessions">sessions</button>
+      <button data-m="commits">commits</button>
+    </nav>
+  </div>
+  <p class="sub" id="by-project-sub">Top projects for the chosen measure; the rest are Other.</p>
+  <div class="chart" id="c-projects"></div>
+</section>
+
+<div class="grid2">
+  <section class="card">
+    <h2>Cost by agent</h2>
+    <p class="sub">API-equivalent dollars, by coding agent.</p>
+    <div class="chart short" id="c-agents"></div>
+  </section>
+  <section class="card">
+    <h2>When I start sessions</h2>
+    <p class="sub">Agent sessions started, by weekday and local hour (subagents excluded).</p>
+    <div class="chart short" id="c-clock"></div>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Projects</h2>
+  {% if t.rows %}
+  <div class="scroll"><table class="data projects">
+    <thead><tr>
+      <th class="name">project</th><th>sessions</th><th>API-equiv.</th><th>commits</th>
+      <th>issues opened / closed</th><th>PRs merged</th><th>herdr focus</th><th>last active</th>
+    </tr></thead>
+    <tbody>
+    {% for r in t.rows %}
+    <tr>
+      <td class="name"><a href="{% url 'catalog:project' r.project_id %}?range={{ range }}">{{ r.project__name }}</a></td>
+      <td>{{ r.sessions|floatformat:"0g" }}</td>
+      <td>${{ r.cost_usd|floatformat:"0g" }}</td>
+      <td>{{ r.all_commits|floatformat:"0g" }}{% if r.insertions or r.deletions %} <span class="lines">+{{ r.insertions|floatformat:"0g" }} −{{ r.deletions|floatformat:"0g" }}</span>{% endif %}</td>
+      <td>{{ r.gh_issues_opened|floatformat:0 }} / {{ r.gh_issues_closed|floatformat:0 }}</td>
+      <td>{{ r.gh_prs_merged|floatformat:0 }}</td>
+      <td>{{ r.herdr_focus_events|floatformat:"0g" }}</td>
+      <td>{{ r.last_day|date:"M j, Y" }}</td>
+    </tr>
+    {% endfor %}
+    {% if t.unmapped.sessions or t.unmapped.cost %}
+    <tr>
+      <td class="name muted">Unmapped</td><td>{{ t.unmapped.sessions|floatformat:"0g" }}</td>
+      <td>${{ t.unmapped.cost|floatformat:"0g" }}</td>
+      <td colspan="6" class="muted small" style="text-align:left; white-space: normal">agentsview projects that map nowhere: <code>manage.py unmapped</code>, then add aliases in <code>~/src/AGENTS.md</code></td>
+    </tr>
+    {% endif %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted small">No project activity in this range.</p>{% endif %}
+</section>
+
+<script>
+(function () {
+  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const ink2 = dark ? "#c3c2b7" : "#52514e";
+  const grid = dark ? "#2c2c2a" : "#e1e0d9";
+  const baseline = dark ? "#383835" : "#c3c2b7";
+  const surface = dark ? "#1a1a19" : "#fcfcfb";
+  const muted = "#898781";
+  const cat = dark ? ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300", "#9085e9", "#e66767"]
+                   : ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948"];
+  const cfg = { displayModeBar: false, responsive: true };
+  function layout(yTitle, extra) {
+    return Object.assign({
+      margin: { l: 60, r: 15, t: 30, b: 45 }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      font: { family: "system-ui, sans-serif", size: 12, color: ink2 },
+      xaxis: { type: "date", gridcolor: grid, linecolor: baseline, zeroline: false },
+      yaxis: { title: { text: yTitle }, gridcolor: grid, linecolor: baseline, zeroline: false, automargin: true, rangemode: "tozero" },
+      barmode: "stack", bargap: 0.15, barcornerradius: 3, hovermode: "x unified",
+      legend: { orientation: "h", y: 1.12, x: 0, traceorder: "normal" },
+      hoverlabel: { bgcolor: surface, bordercolor: baseline, font: { color: ink2 } },
+    }, extra || {});
+  }
+  const empty = (id, msg) => { const el = document.getElementById(id); el.style.height = "auto"; el.innerHTML = '<p class="small muted">' + msg + '</p>'; };
+
+  fetch("{% url 'catalog:projects_data' %}?range={{ range|urlencode }}").then((r) => r.json()).then((d) => {
+    // Colour follows the project, not its rank: slots are handed out once, in
+    // order of cost, then whatever the other measures add.
+    const slot = {};
+    let next = 0;
+    ["cost", "sessions", "commits"].forEach((m) => d.metrics[m].traces.forEach((t) => {
+      if (t.name !== "Other" && t.name !== "Unmapped" && !(t.name in slot) && next < cat.length) slot[t.name] = next++;
+    }));
+    const colour = (n) => (n in slot ? cat[slot[n]] : muted);
+    const per = d.bucket === "week" ? "per week" : "per day";
+    const fmt = { cost: "$%{y:,.0f}", sessions: "%{y:,.0f}", commits: "%{y:,.0f}" };
+    const unmapped = dark ? "#5a5955" : "#b5b4ad";
+
+    function draw(m) {
+      const spec = d.metrics[m];
+      if (!spec.traces.length) { Plotly.purge("c-projects"); empty("c-projects", "No activity in this range."); return; }
+      document.getElementById("c-projects").style.height = "";
+      document.getElementById("by-project-sub").textContent = spec.label + " " + per + ". Top projects for this measure; the rest are Other.";
+      Plotly.react("c-projects", spec.traces.map((t) => ({
+        x: d.x, y: t.y, name: t.name, type: "bar",
+        marker: { color: t.name === "Unmapped" ? unmapped : colour(t.name), line: { color: surface, width: 1 } },
+        hovertemplate: fmt[m] + "<extra>" + t.name + "</extra>",
+      })), layout(spec.label), cfg);
+    }
+    draw("cost");
+    document.querySelectorAll("#metric button").forEach((b) => b.addEventListener("click", () => {
+      document.querySelectorAll("#metric button").forEach((x) => x.classList.toggle("active", x === b));
+      draw(b.dataset.m);
+    }));
+
+    if (!d.agents.length) empty("c-agents", "No agent usage in this range.");
+    else Plotly.newPlot("c-agents", d.agents.map((a, i) => ({
+      x: d.x, y: a.y, name: a.name, type: "bar", marker: { color: i < cat.length ? cat[i] : muted, line: { color: surface, width: 1 } },
+      hovertemplate: "$%{y:,.0f}<extra>" + a.name + "</extra>",
+    })), layout("$"), cfg);
+
+    const z = d.clock;
+    if (!z.some((row) => row.some((v) => v))) empty("c-clock", "No sessions in this range.");
+    else {
+      const track = dark ? "#2c2c2a" : "#ecebe5";
+      const ramp = dark ? [[0, track], [0.0001, "#104281"], [0.5, "#2a78d6"], [1, "#9ec5f4"]]
+                        : [[0, track], [0.0001, "#cde2fb"], [0.5, "#5598e7"], [1, "#184f95"]];
+      const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+      Plotly.newPlot("c-clock", [{
+        type: "heatmap", z: z.slice().reverse(), y: days.slice().reverse(), x: [...Array(24).keys()],
+        colorscale: ramp, xgap: 2, ygap: 2, showscale: false,
+        hovertemplate: "%{y} %{x}:00 · %{z} sessions<extra></extra>",
+      }], layout("", { hovermode: "closest", margin: { l: 45, r: 10, t: 10, b: 40 },
+                       xaxis: { title: { text: "hour" }, dtick: 3, gridcolor: "rgba(0,0,0,0)", linecolor: baseline },
+                       yaxis: { gridcolor: "rgba(0,0,0,0)", linecolor: "rgba(0,0,0,0)" } }), cfg);
+    }
+  });
+})();
+</script>
+{% endblock %}

@@ -136,6 +136,8 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 # Bulk raw data (mail, health payloads) lives off the boot disk. A loader
 # that needs it reports itself disabled when the volume isn't mounted.
 RAW_DIR = Path(os.environ.get("WESTMARCH_RAW_DIR", "/Volumes/ext1/westmarch"))
+# First month the health coverage chart shows (YYYY-MM); earlier data widens it.
+HEALTH_HISTORY_START = os.environ.get("HEALTH_HISTORY_START", "2015-01")
 
 # Google: a Desktop OAuth client and the token `manage.py google_auth`
 # writes. Read-only scopes; this project never sends or modifies anything.

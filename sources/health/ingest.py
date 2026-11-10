@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from core.models import LoaderRun
 
+from . import rollup
 from .models import IngestBatch, Metric, SleepNight, Workout, WorkoutRoutePoint
 
 log = logging.getLogger(__name__)
@@ -266,6 +267,10 @@ def ingest_payload(payload, *, sha256="", size=0, raw_path="") -> dict:
         for i in range(0, len(rows), CHUNK):
             WorkoutRoutePoint.objects.bulk_create(rows[i : i + CHUNK])
         n_route = len(rows)
+    touched = {rollup.local_day(m.at) for m in metrics.values()}
+    touched |= {n.night for n in sleeps.values()}
+    touched |= {rollup.local_day(w.start) for w in workouts.values()}
+    rollup.rebuild(touched)
     n_metrics = len(metrics) + len(sleeps)
     IngestBatch.objects.create(
         received_at=timezone.now(), sha256=sha256, bytes=size, metric_points=n_metrics,

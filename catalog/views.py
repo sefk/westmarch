@@ -4,16 +4,23 @@ fetches and draws with plotly."""
 
 from django.db.models import Max, Q
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 
+from catalog import health as hl
 from catalog import subscriptions as subs
 from core.models import LoaderRun
+from sources.health.models import Workout
 
 CATALOG = [
     {
         "title": "Subscriptions",
         "url_name": "catalog:subscriptions",
         "question": "Am I making good use of my AI subscriptions?",
+    },
+    {
+        "title": "Health",
+        "url_name": "catalog:health",
+        "question": "How am I doing physically?",
     },
 ]
 WAITING = [
@@ -73,3 +80,35 @@ def subscriptions(request):
 
 def subscriptions_data(request):
     return JsonResponse(subs.traces(_range(request)))
+
+
+def _health_range(request):
+    r = request.GET.get("range", hl.DEFAULT_RANGE)
+    return r if r in hl.RANGES else hl.DEFAULT_RANGE
+
+
+def health(request):
+    r = _health_range(request)
+    return render(
+        request,
+        "catalog/health.html",
+        {"section": "health", "range": r, "ranges": list(hl.RANGES), "summary": hl.summary(),
+         "workouts": hl.workouts(r)},
+    )
+
+
+def health_data(request):
+    return JsonResponse(hl.series(_health_range(request)))
+
+
+def workout(request, pk):
+    w = get_object_or_404(Workout.objects.defer("raw"), pk=pk)
+    return render(request, "catalog/workout.html", {"section": "health", "w": w})
+
+
+def workout_data(request, pk):
+    return JsonResponse(hl.workout_detail(get_object_or_404(Workout, pk=pk)))
+
+
+def health_coverage(request):
+    return JsonResponse(hl.coverage())

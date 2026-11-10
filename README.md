@@ -223,8 +223,14 @@ and `IngestBatch`. A re-sent workout with a route replaces its points; one
 sent without a route keeps them. Each ingest also shows up as a `health` row in the loader
 table.
 
+Every ingest also rebuilds `HealthDay`, a per-day rollup (steps, energy,
+daylight, resting HR, HRV, sleep stages, workouts) for the days it touched;
+`uv run manage.py health_rollup --full` rebuilds all of it.
+
 Check that data is landing at `/ingest/health/status/` (counts and the
-latest point per metric). Replay a saved payload, or backfill from a manual
+latest point per metric), or at the coverage chart at the bottom of
+`/body/`, which shows per month and data type which exports are still
+missing (from `HEALTH_HISTORY_START`, default `2015-01`). Replay a saved payload, or backfill from a manual
 JSON export, with `uv run manage.py health_import file.json[.gz]`.
 
 Phone setup: two automations of type REST API (one for Health Metrics, one
@@ -243,6 +249,8 @@ HTML; each chart fetches a JSON endpoint and draws it.
 |-----|------|
 | `/` | the catalog: each analysis and the question it answers, plus the last run of every loader |
 | `/subscriptions/?range=7d` | "Am I making good use of my AI subscriptions?": per plan, the latest reading of every limit window, its history (`range` = `24h`, `7d`, `30d`, `all`), and agentsview's API-equivalent spend against the monthly price |
+| `/body/?range=90d` | "How am I doing physically?": last-7-day tiles, steps, sleep stages, resting HR, HRV, daylight, exercise, workouts per week by type, the workout list, and data coverage by month (`range` = `30d`, `90d`, `1y`, `all`) |
+| `/body/workouts/<id>/` | one workout: route map, elevation, heart rate. Map tiles load from CARTO; nothing else leaves the machine |
 | `/subscriptions/data/?range=7d` | the chart data: `{vendor: {traces: [{name, window, x, y, kind}]}}`, `kind` `pct` or `usd` |
 
 ## Running locally

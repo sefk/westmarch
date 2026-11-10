@@ -101,6 +101,7 @@ table.data td:first-child, table.data th:first-child { text-align: left; }
   <nav>
     <a href="{% url 'catalog:home' %}" class="{% if section == 'home' %}active{% endif %}">Home</a>
     <a href="{% url 'catalog:subscriptions' %}" class="{% if section == 'subscriptions' %}active{% endif %}">Subscriptions</a>
+    <a href="{% url 'catalog:health' %}" class="{% if section == 'health' %}active{% endif %}">Health</a>
   </nav>
 </header>
 <main>

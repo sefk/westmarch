@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ w.name }}{% endblock %}
+
+{% block head %}
+<script src="{% static 'vendor/plotly.min.js' %}"></script>
+<style>
+.back { font-size: 0.85rem; color: var(--ink-2); }
+.facts { display: flex; flex-wrap: wrap; gap: 0.5rem 1.75rem; margin: 0.5rem 0 1.25rem; }
+.facts div { font-size: 0.8rem; color: var(--ink-2); }
+.facts b { display: block; font-size: 1.15rem; color: var(--ink); font-variant-numeric: tabular-nums; }
+#map { width: 100%; height: 440px; border-radius: 6px; overflow: hidden; }
+.chart { width: 100%; height: 200px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1.25rem; }
+.grid2 .card { margin-bottom: 0; min-width: 0; }
+.card h2 { margin-bottom: 0.25rem; }
+.note { font-size: 0.78rem; color: var(--muted); margin: 0.4rem 0 0; }
+@media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<a class="back" href="{% url 'catalog:health' %}">&larr; Health</a>
+<h1 style="margin-top:0.4rem">{{ w.name }}, {{ w.start|date:"l, F j, Y, g:i a" }}</h1>
+<div class="facts">
+  {% if w.duration_seconds %}<div><b id="dur"></b>duration</div>{% endif %}
+  {% if w.distance %}<div><b>{{ w.distance|floatformat:2 }} {{ w.distance_units }}</b>distance</div>{% endif %}
+  {% if w.active_energy_kcal %}<div><b>{{ w.active_energy_kcal|floatformat:0 }}</b>active kcal</div>{% endif %}
+  {% if w.avg_heart_rate %}<div><b>{{ w.avg_heart_rate|floatformat:0 }}</b>avg bpm</div>{% endif %}
+  {% if w.max_heart_rate %}<div><b>{{ w.max_heart_rate|floatformat:0 }}</b>max bpm</div>{% endif %}
+  {% if w.route_points %}<div><b>{{ w.route_points }}</b>GPS points</div>{% endif %}
+</div>
+
+{% if w.route_points %}
+<section class="card">
+  <h2>Route</h2>
+  <div id="map"></div>
+  <p class="note">Blue dot is the start, orange the end. Map tiles come from CARTO; the route itself is drawn in the browser and is not sent anywhere.</p>
+</section>
+{% endif %}
+
+<div class="grid2">
+  <section class="card" id="elev-card">
+    <h2>Elevation</h2>
+    <div class="chart" id="c-elev"></div>
+  </section>
+  <section class="card" id="hr-card">
+    <h2>Heart rate</h2>
+    <div class="chart" id="c-hr"></div>
+  </section>
+</div>
+
+<script>
+(function () {
+  const secs = {{ w.duration_seconds|default:0 }};
+  const durEl = document.getElementById("dur");
+  if (durEl) { const m = Math.round(secs / 60); durEl.textContent = m >= 60 ? Math.floor(m / 60) + "h " + String(m % 60).padStart(2, "0") + "m" : m + "m"; }
+
+  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const ink2 = dark ? "#c3c2b7" : "#52514e";
+  const grid = dark ? "#2c2c2a" : "#e1e0d9";
+  const baseline = dark ? "#383835" : "#c3c2b7";
+  const surface = dark ? "#1a1a19" : "#fcfcfb";
+  const blue = dark ? "#3987e5" : "#2a78d6";
+  const orange = dark ? "#d95926" : "#eb6834";
+  const cfg = { displayModeBar: false, responsive: true };
+
+  function line(id, x, y, name, unit, color) {
+    Plotly.newPlot(id, [{ x: x, y: y, type: "scatter", mode: "lines", line: { width: 2, color: color },
+                          hovertemplate: "%{y:.0f} " + unit + " at %{x:.0f} min<extra>" + name + "</extra>" }], {
+      margin: { l: 50, r: 15, t: 10, b: 35 }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      font: { family: "system-ui, sans-serif", size: 12, color: ink2 },
+      xaxis: { title: { text: "minutes" }, gridcolor: grid, linecolor: baseline, zeroline: false },
+      yaxis: { title: { text: unit }, gridcolor: grid, linecolor: baseline, zeroline: false, automargin: true },
+      showlegend: false, hovermode: "closest",
+    }, cfg);
+  }
+
+  fetch("{% url 'catalog:workout_data' w.pk %}").then((r) => r.json()).then((d) => {
+    const lat = d.route.lat, lon = d.route.lon;
+    if (lat.length && document.getElementById("map")) {
+      const latMin = Math.min(...lat), latMax = Math.max(...lat), lonMin = Math.min(...lon), lonMax = Math.max(...lon);
+      const span = Math.max(latMax - latMin, (lonMax - lonMin) * Math.cos((latMin + latMax) / 2 * Math.PI / 180), 0.002);
+      const zoom = Math.max(1, Math.min(17, Math.log2(360 / span) - 1.3));
+      Plotly.newPlot("map", [
+        { type: "scattermap", lat: lat, lon: lon, mode: "lines", line: { width: 4, color: blue }, hoverinfo: "skip", name: "route" },
+        // markers only: text labels make plotly fetch icon sprites from a CDN
+        { type: "scattermap", lat: [lat[0], lat[lat.length - 1]], lon: [lon[0], lon[lon.length - 1]], mode: "markers",
+          marker: { size: 12, color: [blue, orange] }, text: ["start", "end"], hoverinfo: "text", name: "" },
+      ], {
+        map: { style: dark ? "carto-darkmatter" : "carto-positron",
+               center: { lat: (latMin + latMax) / 2, lon: (lonMin + lonMax) / 2 }, zoom: zoom },
+        margin: { l: 0, r: 0, t: 0, b: 0 }, showlegend: false, paper_bgcolor: surface,
+      }, cfg);
+    }
+    const empty = (id, what) => { const el = document.getElementById(id); el.style.height = "auto"; el.innerHTML = '<p class="small muted">No ' + what + ' recorded.</p>'; };
+    if (d.elevation.y.length) line("c-elev", d.elevation.x, d.elevation.y, "Elevation", "m", blue); else empty("c-elev", "elevation");
+    if (d.heart_rate.y.length) line("c-hr", d.heart_rate.x, d.heart_rate.y, "Heart rate", "bpm", orange); else empty("c-hr", "heart rate");
+  });
+})();
+</script>
+{% endblock %}

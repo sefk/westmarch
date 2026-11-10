@@ -117,3 +117,39 @@ class WorkoutRoutePoint(models.Model):
 
     def __str__(self):
         return f"{self.at:%Y-%m-%d %H:%M:%S} {self.lat:.5f},{self.lon:.5f}"
+
+
+class HealthDay(models.Model):
+    """Daily rollup for one local (America/Los_Angeles) day, rebuilt from
+    Metric, SleepNight and Workout by `rollup.rebuild`. Null means no data,
+    not zero."""
+
+    day = models.DateField(unique=True)
+    steps = models.FloatField(null=True)
+    active_kcal = models.FloatField(null=True)
+    exercise_min = models.FloatField(null=True)
+    stand_hours = models.FloatField(null=True)
+    daylight_min = models.FloatField(null=True)
+    distance_mi = models.FloatField(null=True)
+    flights = models.FloatField(null=True)
+    resting_hr = models.FloatField(null=True)
+    hrv_ms = models.FloatField(null=True)
+    walking_hr = models.FloatField(null=True)
+    respiratory_rate = models.FloatField(null=True)
+    spo2_pct = models.FloatField(null=True)
+    vo2_max = models.FloatField(null=True)
+    # Sleep ending on the morning of this day.
+    sleep_hr = models.FloatField(null=True)
+    sleep_deep_hr = models.FloatField(null=True)
+    sleep_core_hr = models.FloatField(null=True)
+    sleep_rem_hr = models.FloatField(null=True)
+    sleep_awake_hr = models.FloatField(null=True)
+    workouts = models.IntegerField(default=0)
+    workout_min = models.FloatField(default=0)
+    workout_kcal = models.FloatField(default=0)
+
+    class Meta:
+        ordering = ["day"]
+
+    def __str__(self):
+        return f"health {self.day}"

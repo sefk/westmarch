@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Health{% endblock %}
+
+{% block head %}
+<script src="{% static 'vendor/plotly.min.js' %}"></script>
+<style>
+.page-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.page-head h1 { margin: 0; }
+.ranges { display: flex; gap: 0.25rem; font-size: 0.85rem; }
+.ranges a { color: var(--ink-2); text-decoration: none; padding: 0.15rem 0.6rem; border: 1px solid var(--border); border-radius: 999px; }
+.ranges a.active { color: var(--ink); border-color: var(--series-1); font-weight: 600; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem; }
+.tiles-head { font-size: 0.8rem; color: var(--muted); margin: 0 0 0.4rem; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.9rem; }
+.tile .label { font-size: 0.8rem; color: var(--ink-2); }
+.tile .value { font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.tile .value small { font-size: 0.8rem; font-weight: 500; color: var(--ink-2); margin-left: 0.2rem; }
+.tile .base { font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 1.25rem; }
+.grid2 .card { margin-bottom: 0; min-width: 0; }
+.grid2 + .card, .card + .grid2 { margin-top: 1.25rem; }
+.card h2 { margin-bottom: 0.25rem; }
+.card .sub { font-size: 0.8rem; color: var(--muted); margin: 0 0 0.25rem; }
+.chart { width: 100%; height: 240px; }
+.chart.tall { height: 280px; }
+table.workouts { width: 100%; }
+table.workouts td.name a { color: var(--ink); }
+table.workouts td.name, table.workouts th.name { text-align: left; }
+@media (max-width: 520px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>How am I doing physically?</h1>
+  <nav class="ranges" aria-label="Chart range">
+    {% for r in ranges %}<a href="?range={{ r }}" class="{% if r == range %}active{% endif %}">{{ r }}</a>{% endfor %}
+  </nav>
+</div>
+
+{% if not summary.latest_day %}
+<section class="card"><p class="muted">No health data yet. Health Auto Export pushes it to <code>/ingest/health/</code>; see the README.</p></section>
+{% else %}
+<p class="tiles-head">Last 7 days; ▲▼ against the 90 days before.</p>
+<div class="tiles">
+  {% for t in summary.tiles %}
+  <div class="tile">
+    <div class="label">{{ t.label }}</div>
+    <div class="value">{% if t.text %}{{ t.text }}<small>{{ t.unit }}</small>{% else %}<span class="muted">-</span>{% endif %}</div>
+    <div class="base">{% if t.base_text %}{% if t.trend == "up" %}▲{% elif t.trend == "down" %}▼{% else %}≈{% endif %} prior 90 days {{ t.base_text }}{{ t.unit }}{% else %}&nbsp;{% endif %}</div>
+  </div>
+  {% endfor %}
+  <div class="tile">
+    <div class="label">Workouts</div>
+    <div class="value">{{ summary.workouts_7d }}</div>
+    <div class="base">data through {{ summary.latest_day|date:"M j" }}</div>
+  </div>
+</div>
+
+<section class="card">
+  <h2>Steps</h2>
+  <p class="sub">Daily total; line is the 7-day average. Blank days had no data.</p>
+  <div class="chart" id="c-steps"></div>
+</section>
+
+<section class="card">
+  <h2>Sleep</h2>
+  <p class="sub">Hours per night by stage, dated by the morning it ended.</p>
+  <div class="chart tall" id="c-sleep"></div>
+</section>
+
+<div class="grid2">
+  <section class="card">
+    <h2>Resting heart rate</h2>
+    <p class="sub">bpm, daily; line is the 7-day average. Lower is better.</p>
+    <div class="chart" id="c-rhr"></div>
+  </section>
+  <section class="card">
+    <h2>Heart rate variability</h2>
+    <p class="sub">ms (SDNN), daily mean; line is the 7-day average.</p>
+    <div class="chart" id="c-hrv"></div>
+  </section>
+  <section class="card">
+    <h2>Time in daylight</h2>
+    <p class="sub">Minutes per day outdoors in daylight, from the Watch.</p>
+    <div class="chart" id="c-daylight"></div>
+  </section>
+  <section class="card">
+    <h2>Exercise minutes</h2>
+    <p class="sub">Apple exercise ring minutes per day.</p>
+    <div class="chart" id="c-exercise"></div>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Workouts per week</h2>
+  <p class="sub">Minutes by type, weeks starting Monday.</p>
+  <div class="chart" id="c-weeks"></div>
+</section>
+
+<section class="card">
+  <h2>Workouts</h2>
+  <p class="sub">Latest {{ workouts|length }} in this range.</p>
+  {% if workouts %}
+  <table class="data workouts">
+    <thead><tr><th>when</th><th class="name">type</th><th>duration</th><th>distance</th><th>active kcal</th><th>avg HR</th><th>route</th></tr></thead>
+    <tbody>
+    {% for w in workouts %}
+    <tr>
+      <td>{{ w.start|date:"D M j, g:i a" }}</td>
+      <td class="name"><a href="{% url 'catalog:workout' w.pk %}">{{ w.name }}</a></td>
+      <td>{{ w.duration_text }}</td>
+      <td>{% if w.distance %}{{ w.distance|floatformat:2 }} {{ w.distance_units }}{% endif %}</td>
+      <td>{% if w.active_energy_kcal %}{{ w.active_energy_kcal|floatformat:0 }}{% endif %}</td>
+      <td>{% if w.avg_heart_rate %}{{ w.avg_heart_rate|floatformat:0 }}{% endif %}</td>
+      <td>{% if w.route_points %}<a href="{% url 'catalog:workout' w.pk %}">map</a>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted small">No workouts in this range.</p>{% endif %}
+</section>
+
+<section class="card" id="coverage">
+  <h2>Data coverage</h2>
+  <p class="sub">Share of days each month with data, all time (ignores the range above). Empty months are exports still to do. Workouts and routes count days with one, so low is normal; zero is the tell.</p>
+  <div class="chart" id="c-coverage" style="height: 280px"></div>
+</section>
+
+<script>
+(function () {
+  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const ink2 = dark ? "#c3c2b7" : "#52514e";
+  const grid = dark ? "#2c2c2a" : "#e1e0d9";
+  const baseline = dark ? "#383835" : "#c3c2b7";
+  const surface = dark ? "#1a1a19" : "#fcfcfb";
+  const muted = "#898781";
+  // Reference categorical palette, fixed order (validated light and dark).
+  const cat = dark ? ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"]
+                   : ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"];
+  const blue = cat[0];
+  const blueSoft = dark ? "#1c5cab" : "#9ec5f4";
+  // Sleep stages: one blue ramp, deepest stage carries the most contrast.
+  const stage = dark ? { deep: "#9ec5f4", core: "#3987e5", rem: "#1c5cab" }
+                     : { deep: "#184f95", core: "#2a78d6", rem: "#86b6ef" };
+
+  function layout(yTitle, extra) {
+    return Object.assign({
+      margin: { l: 55, r: 15, t: 10, b: 45 },
+      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      font: { family: "system-ui, sans-serif", size: 12, color: ink2 },
+      xaxis: { type: "date", gridcolor: grid, linecolor: baseline, zeroline: false },
+      yaxis: { title: { text: yTitle }, gridcolor: grid, linecolor: baseline, zeroline: false, automargin: true, rangemode: "tozero" },
+      showlegend: false, hovermode: "x unified", bargap: 0.15, barcornerradius: 3,
+      hoverlabel: { bgcolor: surface, bordercolor: baseline, font: { color: ink2 } },
+    }, extra || {});
+  }
+  const cfg = { displayModeBar: false, responsive: true };
+  const fmt = (d) => d === null || d === undefined;
+
+  function dailyWithAvg(id, days, daily, avg, name, unit, opts) {
+    opts = opts || {};
+    const el = document.getElementById(id);
+    if (!daily.some((v) => !fmt(v))) { el.style.height = "auto"; el.innerHTML = '<p class="small muted">No data in this range.</p>'; return; }
+    const hv = opts.decimals === 0 ? "%{y:,.0f}" : "%{y:,.1f}";
+    const traces = [
+      opts.points
+        ? { x: days, y: daily, name: name, type: "scatter", mode: "markers", marker: { size: 5, color: blueSoft },
+            hovertemplate: hv + " " + unit + "<extra>" + name + "</extra>" }
+        : { x: days, y: daily, name: name, type: "bar", marker: { color: blueSoft },
+            hovertemplate: hv + " " + unit + "<extra>" + name + "</extra>" },
+      { x: days, y: avg, name: "7-day avg", type: "scatter", mode: "lines", line: { width: 2, color: blue },
+        connectgaps: false, hovertemplate: hv + " " + unit + "<extra>7-day avg</extra>" },
+    ];
+    const l = layout(unit);
+    if (opts.fitY) l.yaxis.rangemode = "normal";
+    Plotly.newPlot(el, traces, l, cfg);
+  }
+
+  fetch("{% url 'catalog:health_coverage' %}").then((r) => r.json()).then((c) => {
+    const track = dark ? "#2c2c2a" : "#ecebe5";
+    const ramp = dark ? [[0, track], [0.0001, "#104281"], [0.5, "#2a78d6"], [1, "#9ec5f4"]]
+                      : [[0, track], [0.0001, "#cde2fb"], [0.5, "#5598e7"], [1, "#184f95"]];
+    const rows = c.rows.slice().reverse();  // first row at the top
+    const x = c.months.map((m) => m + "-15");
+    Plotly.newPlot("c-coverage", [{
+      type: "heatmap", x: x, y: rows.map((r) => r.label), z: rows.map((r) => r.share),
+      customdata: rows.map((r) => r.days_with_data.map((n, i) => [n, c.days[i]])),
+      zmin: 0, zmax: 1, colorscale: ramp, xgap: 2, ygap: 2, showscale: false,
+      hovertemplate: "%{y}, %{x|%b %Y}: %{customdata[0]} of %{customdata[1]} days<extra></extra>",
+    }], layout("", { hovermode: "closest", margin: { l: 95, r: 15, t: 10, b: 30 },
+                     yaxis: { gridcolor: "rgba(0,0,0,0)", linecolor: "rgba(0,0,0,0)", automargin: true },
+                     xaxis: { type: "date", gridcolor: "rgba(0,0,0,0)", linecolor: baseline, dtick: "M12", tickformat: "%Y" } }), cfg);
+  });
+
+  fetch("{% url 'catalog:health_data' %}?range={{ range|urlencode }}")
+    .then((r) => r.json())
+    .then((d) => {
+      const s = d.series, a = d.avg7, x = d.days;
+      dailyWithAvg("c-steps", x, s.steps, a.steps, "Steps", "steps", { decimals: 0 });
+      dailyWithAvg("c-rhr", x, s.resting_hr, a.resting_hr, "Resting HR", "bpm", { points: true, fitY: true, decimals: 0 });
+      dailyWithAvg("c-hrv", x, s.hrv_ms, a.hrv_ms, "HRV", "ms", { points: true, fitY: true, decimals: 0 });
+      dailyWithAvg("c-daylight", x, s.daylight_min, a.daylight_min, "Daylight", "min", { decimals: 0 });
+      dailyWithAvg("c-exercise", x, s.exercise_min, a.exercise_min, "Exercise", "min", { decimals: 0 });
+
+      const sl = document.getElementById("c-sleep");
+      if (!s.sleep_hr.some((v) => !fmt(v))) { sl.style.height = "auto"; sl.innerHTML = '<p class="small muted">No sleep data in this range.</p>'; }
+      else {
+        const st = (y, name, color) => ({ x: x, y: y, name: name, type: "bar", marker: { color: color, line: { color: surface, width: 1 } },
+                                         hovertemplate: "%{y:.1f} h<extra>" + name + "</extra>" });
+        Plotly.newPlot(sl, [
+          st(s.sleep_deep_hr, "Deep", stage.deep), st(s.sleep_core_hr, "Core", stage.core),
+          st(s.sleep_rem_hr, "REM", stage.rem), st(s.sleep_awake_hr, "Awake", muted),
+          { x: x, y: a.sleep_hr, name: "7-day avg asleep", type: "scatter", mode: "lines", line: { width: 2, color: ink2, dash: "dot" },
+            hovertemplate: "%{y:.1f} h<extra>7-day avg asleep</extra>" },
+        ], layout("hours", { barmode: "stack", showlegend: true, legend: { orientation: "h", y: 1.12, x: 0 }, margin: { l: 55, r: 15, t: 30, b: 45 } }), cfg);
+      }
+
+      const wk = document.getElementById("c-weeks");
+      if (!d.weeks.types.length) { wk.style.height = "auto"; wk.innerHTML = '<p class="small muted">No workouts in this range.</p>'; }
+      else {
+        Plotly.newPlot(wk, d.weeks.types.map((t, i) => ({
+          x: d.weeks.x, y: t.minutes, name: t.name, type: "bar",
+          marker: { color: t.name === "Other" ? muted : cat[i % cat.length], line: { color: surface, width: 1 } },
+          hovertemplate: "%{y:.0f} min<extra>" + t.name + "</extra>",
+        })), layout("minutes", { barmode: "stack", showlegend: true, legend: { orientation: "h", y: 1.15, x: 0 }, margin: { l: 55, r: 15, t: 30, b: 45 } }), cfg);
+      }
+    });
+})();
+</script>
+{% endif %}
+{% endblock %}

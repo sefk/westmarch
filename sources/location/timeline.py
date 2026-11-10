@@ -39,8 +39,13 @@ DEVICE = {"timeline-ios": "google-timeline", "timeline-android": "google-timelin
 def latlng(v):
     """'geo:37.4,-122.1', '37.4°, -122.1°', {'latLng': ...}, {'latitudeE7', 'longitudeE7'} -> (lat, lon)."""
     if isinstance(v, dict):
-        if "latitudeE7" in v and "longitudeE7" in v:
-            lat, lon = num(v["latitudeE7"]), num(v["longitudeE7"])
+        for la, lo in (("latitudeE7", "longitudeE7"), ("latE7", "lngE7")):  # simplifiedRawPath uses the short pair
+            if la in v and lo in v:
+                lat, lon = num(v[la]), num(v[lo])
+                break
+        else:
+            lat = lon = None
+        if lat is not None or lon is not None:
             return (lat / 1e7, lon / 1e7) if lat is not None and lon is not None else (None, None)
         for k in ("latLng", "LatLng", "point"):
             if k in v:

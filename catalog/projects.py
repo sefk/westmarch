@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.db.models import Max, Q, Sum
+from django.db.models.functions import Greatest
 from django.utils import timezone
 
 from core.models import Project, ProjectAlias
@@ -46,15 +47,25 @@ def _f(v):
     return float(v) if isinstance(v, Decimal) else (v or 0)
 
 
+def day_commits(r) -> int:
+    """A pushed commit is counted by both gitlocal and GitHub, so a day's
+    commits are the larger of the two, not their sum (local-only commits
+    and GitHub-only repos still count)."""
+    return max(r["commits"] or 0, r["gh_commits"] or 0)
+
+
 def table(range_key, now=None):
     """One row per project active in the range, by API-equivalent cost."""
     lo = range_start(range_key, now)
     qs = (ProjectDay.objects.filter(day__gte=lo).values("project_id", "project__name", "project__tab")
           .annotate(**{k: Sum(k) for k in SUMS}, last_day=Max("day")))
+    # Separate query: inside the one above, "commits" names the Sum, not the field.
+    deduped = dict(ProjectDay.objects.filter(day__gte=lo).values("project_id")
+                   .annotate(c=Sum(Greatest("commits", "gh_commits"))).values_list("project_id", "c"))
     rows = []
     for r in qs:
         r = {k: _f(v) if k in SUMS else v for k, v in r.items()}
-        r["all_commits"] = r["commits"] + r["gh_commits"]
+        r["all_commits"] = deduped.get(r["project_id"]) or 0
         rows.append(r)
     rows.sort(key=lambda r: (-r["cost_usd"], -r["all_commits"], r["project__name"]))
     unmapped = UnmappedDay.objects.filter(day__gte=lo).aggregate(sessions=Sum("sessions"), cost=Sum("cost_usd"))
@@ -88,7 +99,7 @@ def series(range_key, now=None):
         grid = defaultdict(lambda: [0.0] * len(xs))
         totals = defaultdict(float)
         for r in days:
-            v = _f(r[field]) + (_f(r["gh_commits"]) if key == "commits" else 0)
+            v = day_commits(r) if key == "commits" else _f(r[field])
             grid[r["project__name"]][slot(r["day"])] += v
             totals[r["project__name"]] += v
         named = [p for p, t in sorted(totals.items(), key=lambda kv: -kv[1])[:TOP] if t > 0]
@@ -160,6 +171,6 @@ def project_detail(project: Project, range_key, now=None, request_host=None):
     return {
         "x": [d.isoformat() for d in xs],
         "cost": [_f(rows[d].cost_usd) if d in rows else 0 for d in xs],
-        "commits": [(rows[d].commits + rows[d].gh_commits) if d in rows else 0 for d in xs],
+        "commits": [day_commits(vars(rows[d])) if d in rows else 0 for d in xs],
         "sessions": sessions,
     }

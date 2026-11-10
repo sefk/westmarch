@@ -39,7 +39,8 @@ def test_table(data):
     t = pj.table("30d", now=NOW)
     assert [r["project__name"] for r in t["rows"]][:2] == ["alpha", "beta"]
     alpha = t["rows"][0]
-    assert alpha["cost_usd"] == 300 and alpha["all_commits"] == 3 and alpha["last_day"] == END
+    assert alpha["cost_usd"] == 300 and alpha["all_commits"] == 3 and alpha["last_day"] == END  # max(0, 1) x 3
+    assert t["rows"][1]["all_commits"] == 3  # beta: max(1 local, 1 GitHub), not 2
     assert t["unmapped"] == {"sessions": 2, "cost": 7.5}
     assert t["totals"]["projects"] == 8 and t["totals"]["sessions"] == 24 + 2
 
@@ -52,7 +53,7 @@ def test_series_top_other_unmapped_and_clock(data):
     other = next(t for t in s["metrics"]["cost"]["traces"] if t["name"] == "Other")
     assert other["y"][-1] == 40 + 30  # g and h
     commits = s["metrics"]["commits"]["traces"]
-    assert commits[0]["name"] == "h" and commits[0]["y"][-1] == 8  # 7 local + 1 GitHub
+    assert commits[0]["name"] == "h" and commits[0]["y"][-1] == 7  # max(7 local, 1 GitHub)
     assert "Unmapped" not in [t["name"] for t in commits]
     assert s["agents"][0]["name"] == "claude"
     assert s["clock"][END.weekday()][9] == 1  # subagent not counted

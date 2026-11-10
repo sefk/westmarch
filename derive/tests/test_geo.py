@@ -4,7 +4,7 @@ from datetime import timezone as dt_timezone
 import pytest
 from django.utils import timezone
 
-from derive.geo import GeoLoader, haversine_km, homes, weighted_median
+from derive.geo import GeoLoader, haversine_km, homes, visit_days, weighted_median
 from derive.models import PlaceDay, Trip
 from sources.health.models import Workout, WorkoutRoutePoint
 from sources.location.models import LocationPoint, Visit
@@ -84,3 +84,19 @@ def test_zero_zero_ignored():
     photo("z", date(2026, 5, 1), (0, 0))
     GeoLoader().load()
     assert PlaceDay.objects.count() == 0
+
+
+def test_visit_days_split_at_midnight():
+    start = timezone.make_aware(datetime(2026, 5, 1, 20))
+    days = visit_days(start, start + timedelta(hours=30))  # 20:00 May 1 to 02:00 May 3
+    assert days == [(date(2026, 5, 1), 4.0), (date(2026, 5, 2), 24.0), (date(2026, 5, 3), 2.0)]
+    assert visit_days(start, None) == [(date(2026, 5, 1), 1.0)]
+
+
+def test_multi_day_visit_makes_a_trip(settings):
+    settings.HOME_LATLON = f"{HOME[0]},{HOME[1]}"
+    Visit.objects.create(source="timeline-ios", start=at(date(2026, 5, 1), 15), end=at(date(2026, 5, 4), 10),
+                         lat=FAR[0], lon=FAR[1])
+    GeoLoader().load()
+    assert PlaceDay.objects.filter(away=True).count() == 4
+    assert Trip.objects.get().days == 4

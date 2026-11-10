@@ -56,7 +56,8 @@ SEMANTIC = {"timelineObjects": [
                          "endLocation": {"latitudeE7": 377700000, "longitudeE7": -1224100000},
                          "duration": {"startTimestampMs": "1433174400000", "endTimestampMs": "1433178000000"},
                          "distance": 45000, "activityType": "IN_PASSENGER_VEHICLE", "confidence": "HIGH",
-                         "simplifiedRawPath": {"points": [{"latE7": 1, "lngE7": 2}]}}},
+                         "simplifiedRawPath": {"points": [{"latE7": 375000000, "lngE7": -1222000000,
+                                                             "timestamp": "2015-06-01T17:30:00Z"}]}}},
 ]}
 
 
@@ -72,6 +73,7 @@ def test_latlng_forms():
     assert latlng("37.4°, -122.1°") == (37.4, -122.1)
     assert latlng({"latLng": "1°, 2°"}) == (1, 2)
     assert latlng({"latitudeE7": 374400000, "longitudeE7": -1221600000}) == (37.44, -122.16)
+    assert latlng({"latE7": 374400000, "lngE7": -1221600000}) == (37.44, -122.16)
     assert latlng("geo:99,0") == (None, None) and latlng(None) == (None, None)
 
 
@@ -119,7 +121,8 @@ def test_semantic_in_takeout_zip_and_idempotent(tmp_path):
         zf.writestr("Takeout/Mail/readme.json", "{}")
     import_path(z, log=lambda m: None)
     import_path(z, log=lambda m: None)
-    assert Visit.objects.count() == 1 and TripSegment.objects.count() == 1 and LocationPoint.objects.count() == 2
+    assert Visit.objects.count() == 1 and TripSegment.objects.count() == 1 and LocationPoint.objects.count() == 3
+    assert LocationPoint.objects.filter(device_id="google-timeline", lat=37.5, lon=-122.2).exists()  # latE7 path point
     v = Visit.objects.get()
     assert (v.name, v.address, v.probability) == ("Cafe", "1 Main St", 85)
     t = TripSegment.objects.get()

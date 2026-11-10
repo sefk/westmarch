@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter, defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.conf import settings
 from django.db import transaction
@@ -79,8 +79,8 @@ def collect():
             votes[local_day(starts[row["workout_id"]])].append((row["lat"], row["lon"], 5.0, "routes", "", ""))
 
     for start, end, lat, lon in Visit.objects.filter(lat__isnull=False).values_list("start", "end", "lat", "lon"):
-        hours = ((end - start).total_seconds() / 3600) if end else 1
-        votes[local_day(start)].append((lat, lon, min(12.0, max(0.25, hours)), "visits", "", ""))
+        for d, hours in visit_days(start, end):
+            votes[d].append((lat, lon, min(12.0, max(0.25, hours)), "visits", "", ""))
 
     seen = set()
     for at, lat, lon in LocationPoint.objects.order_by("at").values_list("at", "lat", "lon").iterator(chunk_size=10000):
@@ -90,6 +90,22 @@ def collect():
         seen.add(slot)
         votes[local_day(at)].append((lat, lon, 1.0, "points", "", ""))
     return votes
+
+
+def visit_days(start, end):
+    """[(local day, hours of the visit inside it)]: a stay across midnight,
+    or for a week, votes for every day it covers. No end counts as an hour."""
+    if end is None or end <= start:
+        return [(local_day(start), 1.0)]
+    out = []
+    cur = timezone.localtime(start)
+    end = timezone.localtime(end)
+    while cur < end:
+        next_midnight = timezone.make_aware(datetime.combine(cur.date() + timedelta(days=1), time.min))
+        stop = min(end, next_midnight)
+        out.append((cur.date(), (stop - cur).total_seconds() / 3600))
+        cur = stop
+    return out
 
 
 def cell(lat, lon):

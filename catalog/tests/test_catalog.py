@@ -54,9 +54,36 @@ def test_home_lists_entries_and_loaders(client):
     body = resp.content.decode()
     assert "Am I making good use of my AI subscriptions?" in body
     assert "What have I been working on, and how?" in body
-    assert ">boom happened</td>" in body  # first line only; full message in the title
-    assert "FAILED" in body and "herdr" in body
+    assert "1 loader failing:</span> agentsview" in body  # status line on every tab
+    assert "FAILED" not in body  # the table is on the Tech tab
+    tech = client.get("/?tab=tech").content.decode()
+    assert ">boom happened</td>" in tech  # first line only; full message in the title
+    assert "FAILED" in tech and "herdr" in tech and "1 of 2 ok" in tech
     assert [r.loader for r in latest_loader_runs()] == ["agentsview", "herdr"]
+
+
+@pytest.mark.django_db
+def test_home_tabs(client):
+    for key in ["work", "tech", "projects", "health", "social", "fun", "money", "bogus"]:
+        r = client.get(f"/?tab={key}")
+        assert r.status_code == 200
+    health = client.get("/?tab=health").content.decode()
+    assert "How am I doing physically?" in health and "Workouts, 7 days" in health
+    assert 'href="https://github.com/sefk/westmarch/issues/15"' in health and "planned · #15" in health
+    assert "Who am I in touch with" in client.get("/?tab=social").content.decode()
+    assert "Am I making good use" in client.get("/?tab=bogus").content.decode()  # falls back to Work
+
+
+@pytest.mark.django_db
+def test_home_headline_failure_is_contained(client, monkeypatch):
+    from catalog import home
+
+    def boom(now):
+        raise RuntimeError("nope")
+
+    monkeypatch.setitem(home.PAGES["work"][0], "headlines", boom)
+    r = client.get("/")
+    assert r.status_code == 200 and "What have I been working on" in r.content.decode()
 
 
 @pytest.mark.django_db
@@ -139,3 +166,9 @@ def test_local_share(db):
 def test_local_share_empty(db, client):
     assert subs.local_share("7d")["share"] is None
     assert client.get("/subscriptions/local/?range=30d").json()["x"] == []
+
+
+def test_ago():
+    from catalog.home import _ago
+
+    assert _ago(timedelta(minutes=23)) == "23m" and _ago(timedelta(hours=5)) == "5h" and _ago(timedelta(days=3)) == "3d"

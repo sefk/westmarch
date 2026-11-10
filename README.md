@@ -312,7 +312,7 @@ HTML; each chart fetches a JSON endpoint and draws it.
 
 | URL | what |
 |-----|------|
-| `/` | the catalog: each analysis and the question it answers, plus the last run of every loader |
+| `/?tab=work` | home: the PRD's tabs (Work, Tech, Projects, Health, Social, Fun, Money), each listing its pages with a few headline numbers and its planned pages linked to their issues; a loader status line on every tab, the full loader table on Tech |
 | `/subscriptions/?range=7d` | "Am I making good use of my AI subscriptions?": per plan, the latest reading of every limit window, its history (`range` = `24h`, `7d`, `30d`, `all`), and agentsview's API-equivalent spend against the monthly price |
 | `/projects/?range=90d` | "What have I been working on, and how?": totals, per-project cost / sessions / commits per week (top six named, the rest Other, unmapped agentsview usage separate), cost by agent, when sessions start (weekday × hour), and a per-project table |
 | `/projects/<id>/` | one project: daily cost and commits, recent sessions linked to agentsview |

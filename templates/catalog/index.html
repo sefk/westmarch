@@ -1,77 +1,83 @@
 {% extends "base.html" %}
-{% block title %}Catalog{% endblock %}
+{% block title %}Home{% endblock %}
 
 {% block head %}
 <style>
-.group { margin-bottom: 1.75rem; }
-.group h2 { margin-bottom: 0.75rem; }
-.entry {
-  display: block;
-  padding: 0.6rem 0;
-  border-bottom: 1px solid var(--grid);
-  text-decoration: none;
-  color: inherit;
+.tabs { display: flex; gap: 0.25rem; flex-wrap: wrap; border-bottom: 1px solid var(--grid); margin-bottom: 1rem; }
+.tabs a {
+  color: var(--ink-2); text-decoration: none; padding: 0.45rem 0.8rem; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; font-size: 0.95rem;
 }
-.entry:last-child { border-bottom: none; }
-.entry .title { font-weight: 600; color: var(--ink); }
-a.entry:hover .title { color: var(--series-1); }
-.entry .question { color: var(--ink-2); font-size: 0.9rem; margin-top: 0.15rem; }
-.waiting .entry .title { color: var(--muted); }
-.waiting .entry .question { color: var(--muted); }
-.waiting .entry .why { color: var(--muted); font-size: 0.8rem; font-style: italic; margin-top: 0.15rem; }
+.tabs a.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--series-1); }
+.tabs a .n { color: var(--muted); font-size: 0.75rem; margin-left: 0.25rem; }
+.status { font-size: 0.85rem; color: var(--ink-2); margin: 0 0 1rem; }
+.status .bad { font-weight: 600; }
+.pages { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
+.page { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+        padding: 0.9rem 1.1rem; text-decoration: none; color: inherit; }
+a.page:hover { border-color: var(--series-1); }
+.page .title { font-weight: 650; color: var(--ink); display: flex; justify-content: space-between; gap: 0.5rem; }
+.page .q { color: var(--ink-2); font-size: 0.9rem; margin: 0.2rem 0 0.6rem; }
+.page .tag { font-size: 0.72rem; font-weight: 500; color: var(--muted); border: 1px solid var(--border);
+             border-radius: 4px; padding: 0 0.35rem; align-self: center; white-space: nowrap; }
+.page.planned .title { color: var(--ink-2); }
+.page.planned .q { color: var(--muted); }
+.stats { display: flex; flex-wrap: wrap; gap: 0.4rem 1.4rem; margin: 0; }
+.stats div { font-size: 0.75rem; color: var(--muted); }
+.stats b { display: block; font-size: 1.05rem; color: var(--ink); font-variant-numeric: tabular-nums; font-weight: 600; }
+.note { font-size: 0.78rem; color: var(--muted); margin: 0.5rem 0 0; }
+.loaders-card { margin-top: 1.25rem; }
+table.loaders { width: 100%; }
+table.loaders td, table.loaders th { white-space: nowrap; }
 table.loaders td.msg { text-align: left; color: var(--ink-2); max-width: 32rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scroll { overflow-x: auto; }
 </style>
 {% endblock %}
 
 {% block content %}
-<h1>Analysis catalog</h1>
+<nav class="tabs" aria-label="Tabs">
+  {% for t in tabs %}<a href="?tab={{ t.key }}" class="{% if t.key == tab %}active{% endif %}">{{ t.label }}{% if t.live %}<span class="n">{{ t.live }}</span>{% endif %}</a>{% endfor %}
+</nav>
 
-<section class="group">
-  <h2>AI</h2>
-  <div class="card" style="padding: 0.25rem 1.25rem">
-    {% for entry in entries %}
-    <a class="entry" href="{% url entry.url_name %}">
-      <div class="title">{{ entry.title }}</div>
-      <div class="question">{{ entry.question }}</div>
-    </a>
+<p class="status">
+  {% if failing %}<span class="bad">{{ failing|length }} loader{{ failing|pluralize }} failing:</span> {{ failing|join:", " }}.
+  <a href="?tab=tech#loaders">Details</a>
+  {% elif loader_count %}All {{ loader_count }} loaders ok. <a href="?tab=tech#loaders">Details</a>
+  {% else %}No loader has run yet: <code>uv run manage.py load --all</code>{% endif %}
+</p>
+
+<div class="pages">
+  {% for p in pages %}
+  {% if p.url_name %}<a class="page" href="{% url p.url_name %}">
+  {% elif p.anchor %}<a class="page" href="#{{ p.anchor }}">
+  {% else %}<a class="page planned" href="{{ p.issue_url }}">{% endif %}
+    <div class="title">{{ p.title }}{% if not p.live %}<span class="tag">planned · #{{ p.issue }}</span>{% endif %}</div>
+    <div class="q">{{ p.question }}</div>
+    {% if p.stats %}<div class="stats">{% for label, value in p.stats %}<div><b>{{ value }}</b>{{ label }}</div>{% endfor %}</div>{% endif %}
+    {% if p.note %}<p class="note">{{ p.note }}</p>{% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+{% if tab == "tech" %}
+<section class="card loaders-card" id="loaders">
+  <h2 style="margin-bottom:0.5rem">Loaders</h2>
+  {% if runs %}
+  <div class="scroll"><table class="data loaders">
+    <thead><tr><th>loader</th><th>last run</th><th>status</th><th>rows</th><th style="text-align:left">message</th></tr></thead>
+    <tbody>
+    {% for run in runs %}
+    <tr>
+      <td>{{ run.loader }}</td>
+      <td title="{{ run.started|date:'c' }}">{{ run.started|date:"M j, H:i" }} <span class="muted">({{ run.started|timesince }} ago)</span></td>
+      <td>{% if run.ok is None %}<span class="muted">running</span>{% elif run.ok %}<span class="good">ok</span>{% else %}<span class="bad">FAILED</span>{% endif %}</td>
+      <td>{{ run.rows }}</td>
+      <td class="msg" title="{{ run.message }}">{{ run.first_line }}</td>
+    </tr>
     {% endfor %}
-  </div>
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted small" style="margin:0">No loader has run yet. <code>uv run manage.py load --all</code></p>{% endif %}
 </section>
-
-<section class="group waiting">
-  <h2>Waiting</h2>
-  <div class="card" style="padding: 0.25rem 1.25rem">
-    {% for entry in waiting %}
-    <div class="entry">
-      <div class="title">{{ entry.title }}</div>
-      <div class="question">{{ entry.question }}</div>
-      <div class="why">{{ entry.why }}</div>
-    </div>
-    {% endfor %}
-  </div>
-</section>
-
-<section class="group">
-  <h2>Loaders</h2>
-  <div class="card">
-    {% if runs %}
-    <table class="data loaders">
-      <thead><tr><th>loader</th><th>last run</th><th>status</th><th>rows</th><th style="text-align:left">message</th></tr></thead>
-      <tbody>
-      {% for run in runs %}
-      <tr>
-        <td>{{ run.loader }}</td>
-        <td title="{{ run.started|date:'c' }}">{{ run.started|date:"M j, H:i" }} <span class="muted">({{ run.started|timesince }} ago)</span></td>
-        <td>{% if run.ok is None %}<span class="muted">running</span>{% elif run.ok %}<span class="good">ok</span>{% else %}<span class="bad">FAILED</span>{% endif %}</td>
-        <td>{{ run.rows }}</td>
-        <td class="msg" title="{{ run.message }}">{{ run.first_line }}</td>
-      </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% else %}
-    <p class="muted small" style="margin:0">No loader has run yet. <code>uv run manage.py load --all</code></p>
-    {% endif %}
-  </div>
-</section>
+{% endif %}
 {% endblock %}

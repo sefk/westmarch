@@ -2,63 +2,22 @@
 answers. Pages render HTML; chart data comes from JSON endpoints the page
 fetches and draws with plotly."""
 
-from django.db.models import Max, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
 
 from catalog import health as hl
+from catalog import home as home_tabs
 from catalog import projects as pj
 from catalog import subscriptions as subs
-from core.models import LoaderRun, Project
+from core.models import Project
 from sources.health.models import Workout
 
-CATALOG = [
-    {
-        "title": "Projects",
-        "url_name": "catalog:projects",
-        "question": "What have I been working on, and how?",
-    },
-    {
-        "title": "Subscriptions",
-        "url_name": "catalog:subscriptions",
-        "question": "Am I making good use of my AI subscriptions?",
-    },
-    {
-        "title": "Health",
-        "url_name": "catalog:health",
-        "question": "How am I doing physically?",
-    },
-]
-WAITING = [
-    {
-        "title": "Data health",
-        "question": "Is every loader running, and where are the gaps?",
-        "why": "Placeholder; the loader table below is the start of it.",
-    },
-]
-
-
-def latest_loader_runs():
-    latest = LoaderRun.objects.values("loader").annotate(at=Max("started"))
-    q = Q()
-    for row in latest:
-        q |= Q(loader=row["loader"], started=row["at"])
-    if not q:
-        return []
-    runs = []
-    for run in LoaderRun.objects.filter(q).order_by("loader"):
-        first = (run.message or "").strip().splitlines()
-        run.first_line = first[0] if first else ""
-        runs.append(run)
-    return runs
+latest_loader_runs = home_tabs.latest_runs
 
 
 def home(request):
-    return render(
-        request,
-        "catalog/index.html",
-        {"section": "home", "entries": CATALOG, "waiting": WAITING, "runs": latest_loader_runs()},
-    )
+    ctx = home_tabs.tab_context(request.GET.get("tab", home_tabs.DEFAULT_TAB))
+    return render(request, "catalog/index.html", {"section": "home", **ctx})
 
 
 def _range(request):

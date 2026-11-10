@@ -66,7 +66,7 @@ table.workouts td.name, table.workouts th.name { text-align: left; }
 
 <section class="card">
   <h2>Sleep</h2>
-  <p class="sub">Hours per night by stage, dated by the morning it ended.</p>
+  <p class="sub">Hours per night by stage, dated by the morning it ended. Hatched: asleep, but recorded before the Watch tracked stages.</p>
   <div class="chart tall" id="c-sleep"></div>
 </section>
 
@@ -207,11 +207,14 @@ table.workouts td.name, table.workouts th.name { text-align: left; }
       const sl = document.getElementById("c-sleep");
       if (!s.sleep_hr.some((v) => !fmt(v))) { sl.style.height = "auto"; sl.innerHTML = '<p class="small muted">No sleep data in this range.</p>'; }
       else {
-        const st = (y, name, color) => ({ x: x, y: y, name: name, type: "bar", marker: { color: color, line: { color: surface, width: 1 } },
+        const st = (y, name, color, pattern) => ({ x: x, y: y, name: name, type: "bar",
+                                         marker: { color: color, line: { color: surface, width: 1 }, pattern: pattern },
                                          hovertemplate: "%{y:.1f} h<extra>" + name + "</extra>" });
         Plotly.newPlot(sl, [
           st(s.sleep_deep_hr, "Deep", stage.deep), st(s.sleep_core_hr, "Core", stage.core),
-          st(s.sleep_rem_hr, "REM", stage.rem), st(s.sleep_awake_hr, "Awake", muted),
+          st(s.sleep_rem_hr, "REM", stage.rem),
+          st(s.sleep_unstaged_hr, "Asleep, no stages", stage.core, { shape: "/", fgcolor: surface, solidity: 0.35 }),
+          st(s.sleep_awake_hr, "Awake", muted),
           { x: x, y: a.sleep_hr, name: "7-day avg asleep", type: "scatter", mode: "lines", line: { width: 2, color: ink2, dash: "dot" },
             hovertemplate: "%{y:.1f} h<extra>7-day avg asleep</extra>" },
         ], layout("hours", { barmode: "stack", showlegend: true, legend: { orientation: "h", y: 1.12, x: 0 }, margin: { l: 55, r: 15, t: 30, b: 45 } }), cfg);

@@ -102,8 +102,18 @@ def series(range_key, now=None):
     by_day = {r.day: r for r in HealthDay.objects.filter(day__gte=lo, day__lte=hi)}
     days = [lo + timedelta(days=i) for i in range((hi - lo).days + 1)]
     out = {f: [getattr(by_day[d], f) if d in by_day else None for d in days] for f in SERIES}
+    out["sleep_unstaged_hr"] = [unstaged(by_day.get(d)) for d in days]
     avg7 = {f: rolling(out[f]) for f in ("steps", "resting_hr", "hrv_ms", "daylight_min", "exercise_min", "sleep_hr")}
     return {"days": [d.isoformat() for d in days], "series": out, "avg7": avg7, "weeks": weekly_workouts(lo, hi)}
+
+
+def unstaged(row):
+    """Sleep the stages don't account for: all of it on nights recorded
+    before Apple tracked stages (2022), else any remainder."""
+    if row is None or not row.sleep_hr:
+        return None
+    rest = row.sleep_hr - sum(v or 0 for v in (row.sleep_deep_hr, row.sleep_core_hr, row.sleep_rem_hr))
+    return round(rest, 3) if rest > 0.05 else None
 
 
 def weekly_workouts(lo: date, hi: date):

@@ -240,6 +240,8 @@ def ingest_payload(payload, *, sha256="", size=0, raw_path="") -> dict:
         if ext not in routes:
             row.route_points = have.get(ext, 0)
 
+    # A re-sent workout can move to another day; rebuild the day it leaves too.
+    old_starts = list(Workout.objects.filter(external_id__in=workouts).values_list("start", flat=True))
     _flush(Metric, list(metrics.values()), ["name", "at", "source"], ["units", "qty", "fields"])
     _flush(
         SleepNight,
@@ -270,6 +272,7 @@ def ingest_payload(payload, *, sha256="", size=0, raw_path="") -> dict:
     touched = {rollup.local_day(m.at) for m in metrics.values()}
     touched |= {n.night for n in sleeps.values()}
     touched |= {rollup.local_day(w.start) for w in workouts.values()}
+    touched |= {rollup.local_day(st) for st in old_starts}
     rollup.rebuild(touched)
     n_metrics = len(metrics) + len(sleeps)
     IngestBatch.objects.create(

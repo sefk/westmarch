@@ -133,3 +133,28 @@ def test_empty_page(client):
 def test_decimate():
     assert len(hl._decimate(list(range(10_000)), 2000)) <= 2001
     assert hl._decimate([1, 2], 5) == [1, 2]
+
+
+def test_unstaged_sleep():
+    end = date(2026, 11, 9)
+    HealthDay.objects.create(day=end, sleep_hr=7.0)  # pre-2022 style: no stages
+    HealthDay.objects.create(day=end - timedelta(days=1), sleep_hr=7.0, sleep_deep_hr=1, sleep_core_hr=4,
+                             sleep_rem_hr=2)
+    s = hl.series("30d", now=NOW)["series"]
+    assert s["sleep_unstaged_hr"][-1] == 7.0 and s["sleep_unstaged_hr"][-2] is None
+
+
+def test_moved_workout_rebuilds_old_day(client, settings, tmp_path):
+    settings.HEALTH_INGEST_TOKEN = "t"
+    settings.RAW_DIR = tmp_path
+
+    def send(start):
+        w = {"id": "mv", "name": "Walk", "start": start, "duration": 600}
+        client.post("/ingest/health/", data={"data": {"workouts": [w]}}, content_type="application/json",
+                    HTTP_X_INGEST_TOKEN="t")
+
+    send("2026-11-01 09:00:00 -0800")
+    assert HealthDay.objects.get(day=date(2026, 11, 1)).workouts == 1
+    send("2026-11-02 09:00:00 -0800")
+    assert not HealthDay.objects.filter(day=date(2026, 11, 1)).exists()
+    assert HealthDay.objects.get(day=date(2026, 11, 2)).workouts == 1

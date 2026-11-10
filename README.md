@@ -349,6 +349,22 @@ bin/status                   # job state, web check, log tails, last run of ever
 bin/uninstall-launchd        # asks for sudo itself
 ```
 
+### Backups
+
+`bin/load daily` ends with `manage.py backup_db`: an online SQLite backup
+(consistent while loaders and ingests write), checked with `PRAGMA
+quick_check`, gzipped to `$WESTMARCH_RAW_DIR/backups/westmarch-YYYY-MM-DD.sqlite3.gz`
+(about 1.8 GB and a minute today). It keeps every backup from the last 7
+days plus the first of each ISO week for 8 weeks; most of the bulk can be
+rebuilt from the raw store, so longer history isn't worth the space. It
+refuses to run when the drive isn't mounted, and each run is a `backup`
+row in the loader table. There is no offsite copy yet: the database holds
+mail headers and message text, so the Synology copy waits on how to
+encrypt it (#11).
+
+Restore: stop the web job, `gunzip -c <backup> > db.sqlite3`, delete any
+`db.sqlite3-wal` / `-shm` beside it, start the web job.
+
 Logs land in `var/log/`. A loader job ends with a `LOAD hourly OK` or
 `LOAD hourly FAILED` line. The loader jobs need no restart on deploy:
 launchd starts a fresh process each tick.

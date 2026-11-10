@@ -4,7 +4,8 @@
 #   bin/load hourly    every loader whose cadence is hourly
 #   bin/load daily     the daily loaders, then a full agentsview reload
 #                      (sessions that arrive late with old timestamps only
-#                      show up on a --full run; it takes ~7 s)
+#                      show up on a --full run; it takes ~7 s), then the
+#                      database backup (~1 min)
 #   bin/load session   loaders that need the login Keychain; run hourly by
 #                      the per-user LaunchAgent, not a system daemon
 #
@@ -17,7 +18,7 @@ load_env
 cadence="${1:-}"
 case "$cadence" in
   hourly) cmds=("load --all --cadence hourly") ;;
-  daily)  cmds=("load --all --cadence daily" "load agentsview --full") ;;
+  daily)  cmds=("load --all --cadence daily" "load agentsview --full" "backup_db") ;;
   session) cmds=("load --all --cadence session") ;;
   *) echo "usage: bin/load hourly|daily|session" >&2; exit 2 ;;
 esac

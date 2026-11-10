@@ -44,6 +44,7 @@ uv run manage.py load --all --full # ignore incremental cursors, reload everythi
 | gmail | full mailbox mirror: raw messages on the external SSD, headers in SQLite, read-only | hourly |
 | mailindex | full-text index of mail bodies and attachments; OCR on the local model | hourly |
 | health | not a loader: Apple Health pushed to `/ingest/health/` by Health Auto Export | on push |
+| location | not a loader: GPS points pushed to `/ingest/location/` by Overland | on push |
 
 Each loader lives in `sources/<name>/` with its own models, migrations and
 tests. The framework (`core/loaders.py`) records every run in
@@ -239,6 +240,32 @@ Batch Requests on, date range "Since Last Sync", Background App Refresh on,
 Low Power Mode off. Syncs
 only run while the phone is unlocked, and iOS may delay them.
 
+### Location (Overland)
+
+Continuous location arrives by push from the iOS app [Overland][overland],
+which batches GPS points and POSTs them as GeoJSON to
+`http://<host>:8520/ingest/location/`. It authenticates with
+`LOCATION_INGEST_TOKEN`, sent as Overland's access token (a Bearer header;
+`?access_token=` and `X-Ingest-Token` also work). A blank token disables the
+endpoint (503).
+
+Each batch is kept gzipped under `$WESTMARCH_RAW_DIR/location/YYYY/MM/`
+(falling back to `var/location-raw/`) and upserted into `LocationPoint`, one
+row per device and timestamp, so re-sent batches replace rather than
+duplicate. iOS's -1 for an unknown speed, course or accuracy is stored as
+null; properties the model doesn't name (activity, visit arrival and
+departure, ...) are kept in `props`. The endpoint answers
+`{"result": "ok"}`, which is what tells Overland to drop its queue.
+
+Check it at `/ingest/location/status/`; replay a saved payload with
+`uv run manage.py location_import file.json[.gz]`.
+
+Phone setup, in Overland's settings: Receiver Endpoint
+`http://<tailscale-host>:8520/ingest/location/`, Access Token the value of
+`LOCATION_INGEST_TOKEN`, then start tracking. Tailscale must be connected
+on the phone; Overland queues points while it can't reach the server and
+sends them later.
+
 ## UI
 
 Plain Django templates (`templates/`), plotly vendored at
@@ -301,3 +328,4 @@ uv run pytest -q
 [gcp]: https://console.cloud.google.com/
 [hae]: https://www.healthyapps.dev/
 [takeout]: https://takeout.google.com/
+[overland]: https://overland.p3k.app/

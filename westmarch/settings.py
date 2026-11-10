@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "sources.google",
     "sources.imessage",
     "sources.health",
+    "sources.location",
     "derive",
     "mailindex",
     "catalog",
@@ -177,6 +178,7 @@ MAILINDEX_WORKERS = int(os.environ.get("MAILINDEX_WORKERS", str(max((os.cpu_coun
 # Apple Health: Health Auto Export POSTs to /ingest/health/ with this
 # token in the `X-Ingest-Token` header. Blank disables the endpoint.
 HEALTH_INGEST_TOKEN = os.environ.get("HEALTH_INGEST_TOKEN", "")
+LOCATION_INGEST_TOKEN = os.environ.get("LOCATION_INGEST_TOKEN", "")
 
 GITHUB_OWNERS = [s for s in os.environ.get("GITHUB_OWNERS", "sefk,biglocalnews").split(",") if s]
 

@@ -184,3 +184,9 @@ def test_status_counts_routes(client):
     post(client, {"data": {"workouts": [run_workout(route=route(4))]}})
     d = client.get("/ingest/health/status/").json()
     assert d["route_points"] == 4 and d["workouts_with_route"] == 1
+
+
+def test_no_trailing_slash(client):
+    r = client.post("/ingest/health", data=json.dumps(steps()), content_type="application/json",
+                    HTTP_X_INGEST_TOKEN=TOKEN)
+    assert r.status_code == 200 and Metric.objects.count() == 1

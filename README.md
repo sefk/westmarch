@@ -43,6 +43,7 @@ uv run manage.py load --all --full # ignore incremental cursors, reload everythi
 | imessage | the Messages database, read-only | hourly |
 | gmail | full mailbox mirror: raw messages on the external SSD, headers in SQLite, read-only | hourly |
 | mailindex | full-text index of mail bodies and attachments; OCR on the local model | hourly |
+| photos | Photos library metadata via osxphotos: dates, places, named people, albums, labels; never pixels | daily |
 | health | not a loader: Apple Health pushed to `/ingest/health/` by Health Auto Export | on push |
 | location | not a loader: GPS points pushed to `/ingest/location/` by Overland | on push |
 
@@ -207,6 +208,18 @@ the loader state `body_decode_failures`. Tapbacks are rows with `reaction`
 set ("love", or "-love" when removed) and `reply_to_guid` pointing at the
 target.
 
+### Photos
+
+Reads the Photos library's metadata through [osxphotos][osxphotos] (the
+library at `PHOTOS_LIBRARY`, default `/Volumes/ext1/Photos
+Library.photoslibrary`): when and where each asset was taken (place
+name, city, country), Photos' named people, albums, keywords and its own
+ML labels, camera, favourite/hidden/shared flags. Image and video files are
+never opened. Every run rereads the whole library (about 100k assets in
+25 seconds); assets no longer in it keep their row with `deleted_at` set.
+Unnamed faces count toward `Photo.faces` but don't become `Person` rows.
+The loader reports disabled when the volume isn't mounted.
+
 ### Apple Health
 
 Health data arrives by push from the iOS app [Health Auto Export][hae]
@@ -340,3 +353,4 @@ uv run pytest -q
 [hae]: https://www.healthyapps.dev/
 [takeout]: https://takeout.google.com/
 [overland]: https://overland.p3k.app/
+[osxphotos]: https://github.com/RhetTbull/osxphotos

@@ -58,3 +58,44 @@ class UnmappedDay(models.Model):
 
     def __str__(self):
         return f"unmapped {self.day}"
+
+
+class Trip(models.Model):
+    """A run of consecutive days away from home (gaps of a day or two
+    without location data don't break it). Rebuilt by the geo loader."""
+
+    start = models.DateField()
+    end = models.DateField()
+    days = models.IntegerField()
+    label = models.CharField(max_length=200, blank=True)  # most-photographed city, else coordinates
+    countries = models.JSONField(default=list)
+    max_km = models.FloatField(default=0)  # furthest point from home
+
+    class Meta:
+        ordering = ["start"]
+
+    def __str__(self):
+        return f"{self.label} {self.start}..{self.end}"
+
+
+class PlaceDay(models.Model):
+    """Where I was on one local day: the weighted median of every located
+    thing that day (photos, workout routes, Timeline visits, Overland
+    points). Rebuilt by the geo loader."""
+
+    day = models.DateField(unique=True)
+    lat = models.FloatField()
+    lon = models.FloatField()
+    city = models.CharField(max_length=100, blank=True)  # from photo places; blank if none that day
+    country = models.CharField(max_length=10, blank=True)
+    home_km = models.FloatField()  # primary position's distance from home
+    furthest_km = models.FloatField()  # furthest located point from home
+    away = models.BooleanField(default=False)
+    sources = models.JSONField(default=dict)  # {"photos": 12, "routes": 1, ...}
+    trip = models.ForeignKey(Trip, null=True, blank=True, on_delete=models.SET_NULL, related_name="place_days")
+
+    class Meta:
+        ordering = ["day"]
+
+    def __str__(self):
+        return f"{self.day} {self.city or f'{self.lat:.2f},{self.lon:.2f}'}"

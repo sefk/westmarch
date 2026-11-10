@@ -37,6 +37,7 @@ uv run manage.py load --all --full # ignore incremental cursors, reload everythi
 | codex_limits | Codex weekly limit, read from the CLI's local session logs | hourly |
 | github | commits, issues, PRs for my repos | daily |
 | herdr | herdr workspaces, tabs and focus events | hourly |
+| geo | where I was each day (`PlaceDay`) and trips (`Trip`), from every located source | daily |
 | derive | maps source names onto projects, rolls up per-project daily totals (`ProjectDay`) | hourly |
 | gcal | every Google calendar, full history, read-only | hourly |
 | gtasks | every Google Tasks list, read-only | daily |
@@ -63,6 +64,19 @@ day (sessions, cost, tokens, commits, GitHub activity, herdr focus), and
 rebuild from three days before the last run; `--full` rebuilds all.
 `uv run manage.py unmapped` lists the names that map nowhere: add them as
 `aliases` in `~/src/AGENTS.md`.
+
+### Geo
+
+`geo` (in `derive/geo.py`, after photos) rebuilds `PlaceDay` and `Trip` from
+scratch each run, in under a second. Each day's position is the weighted
+median of everything located that day: photo GPS (dated in the time zone
+the photo was taken in), workout route centroids, Google Timeline visits
+(weighted by hours) and Overland or Timeline points, one per 10 minutes.
+Home is `HOME_LATLON` (`lat,lon`) if set, else per year the ~1 km cell most
+days fall in. A day more than 40 km from home is away; two or more away days
+in a row (a day or two without data doesn't break the run) make a `Trip`,
+labelled with its most-photographed city. Single away days are day trips:
+away, but not a Trip.
 
 ## Phase 2 sources
 

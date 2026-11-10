@@ -54,6 +54,7 @@ LOADERS = [
     "sources.google.loader.TasksLoader",
     "sources.imessage.loader.IMessageLoader",
     "sources.photos.loader.PhotosLoader",
+    "derive.geo.GeoLoader",  # where I was each day; after photos
     "derive.loader.DeriveLoader",  # joins the sources onto core.Project
     # Last: the first Gmail backfill works for up to 50 minutes per run,
     # and nothing else should wait behind it.
@@ -181,6 +182,8 @@ MAILINDEX_WORKERS = int(os.environ.get("MAILINDEX_WORKERS", str(max((os.cpu_coun
 # token in the `X-Ingest-Token` header. Blank disables the endpoint.
 HEALTH_INGEST_TOKEN = os.environ.get("HEALTH_INGEST_TOKEN", "")
 LOCATION_INGEST_TOKEN = os.environ.get("LOCATION_INGEST_TOKEN", "")
+# "lat,lon" pins home for the geo loader; blank infers it per year.
+HOME_LATLON = os.environ.get("HOME_LATLON", "")
 PHOTOS_LIBRARY = Path(os.environ.get("PHOTOS_LIBRARY") or RAW_DIR.parent / "Photos Library.photoslibrary")
 
 GITHUB_OWNERS = [s for s in os.environ.get("GITHUB_OWNERS", "sefk,biglocalnews").split(",") if s]

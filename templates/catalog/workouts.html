@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Workouts{% endblock %}
+
+{% block head %}
+<script src="{% static 'vendor/plotly.min.js' %}"></script>
+<style>
+.back { font-size: 0.85rem; color: var(--ink-2); }
+h1 { margin-top: 0.4rem; }
+form.filters { display: flex; flex-direction: column; gap: 0.6rem; margin-bottom: 1.25rem; }
+.row { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; align-items: center; font-size: 0.85rem; color: var(--ink-2); }
+.row .lbl { color: var(--muted); min-width: 3.5rem; }
+.pills { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.pills a { color: var(--ink-2); text-decoration: none; padding: 0.15rem 0.6rem; border: 1px solid var(--border); border-radius: 999px; }
+.pills a.active { color: var(--ink); border-color: var(--series-1); font-weight: 600; }
+.chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.6rem; border: 1px solid var(--border);
+        border-radius: 999px; cursor: pointer; user-select: none; }
+.chip input { margin: 0; accent-color: var(--series-1); }
+.chip:has(input:checked) { border-color: var(--series-1); color: var(--ink); }
+.chip .n { color: var(--muted); font-size: 0.75rem; }
+input[type=date], input[type=number], select {
+  font: inherit; font-size: 0.85rem; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; padding: 0.15rem 0.4rem;
+}
+input[type=number] { width: 5rem; }
+button.apply { font: inherit; font-size: 0.85rem; padding: 0.2rem 0.8rem; border-radius: 6px; cursor: pointer;
+               border: 1px solid var(--series-1); background: var(--series-1); color: #fff; }
+a.clear { font-size: 0.85rem; color: var(--ink-2); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 0.75rem; margin-bottom: 1.25rem; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.9rem; }
+.tile .label { font-size: 0.8rem; color: var(--ink-2); }
+.tile .value { font-size: 1.4rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.chart { width: 100%; height: 260px; }
+#map { width: 100%; height: 480px; border-radius: 6px; overflow: hidden; }
+.sub { font-size: 0.8rem; color: var(--muted); margin: 0.15rem 0 0.4rem; }
+.scroll { overflow-x: auto; }
+table.workouts { width: 100%; }
+table.workouts td, table.workouts th { white-space: nowrap; }
+table.workouts td.name, table.workouts th.name { text-align: left; }
+table.workouts td.name a { color: var(--ink); }
+table.workouts th a { color: var(--ink-2); text-decoration: none; }
+table.workouts th a.on { color: var(--ink); text-decoration: underline; }
+.pager { display: flex; gap: 1rem; justify-content: flex-end; font-size: 0.85rem; margin-top: 0.6rem; color: var(--ink-2); }
+</style>
+{% endblock %}
+
+{% block content %}
+<a class="back" href="{% url 'catalog:health' %}">&larr; Health</a>
+<h1>Workouts</h1>
+
+<form class="filters" method="get" id="filters">
+  <div class="row">
+    <span class="lbl">When</span>
+    <nav class="pills">
+      {% for p, link in preset_links.items %}<a href="?{{ link }}" class="{% if f.preset == p %}active{% endif %}">{{ p }}</a>{% endfor %}
+    </nav>
+    <span>or</span>
+    <input type="date" name="from" value="{% if f.preset == 'custom' %}{{ f.start|date:'Y-m-d' }}{% endif %}" aria-label="From">
+    <span>to</span>
+    <input type="date" name="to" value="{% if f.preset == 'custom' %}{{ f.end|date:'Y-m-d' }}{% endif %}" aria-label="To">
+  </div>
+  <div class="row">
+    <span class="lbl">Type</span>
+    {% for name, n in types %}
+    <label class="chip"><input type="checkbox" name="type" value="{{ name }}" {% if name in f.types %}checked{% endif %}>{{ name }} <span class="n">{{ n }}</span></label>
+    {% endfor %}
+  </div>
+  <div class="row">
+    <span class="lbl">Only</span>
+    <select name="route" aria-label="Route">
+      <option value="any" {% if f.route == "any" %}selected{% endif %}>with or without a route</option>
+      <option value="yes" {% if f.route == "yes" %}selected{% endif %}>with a GPS route</option>
+      <option value="no" {% if f.route == "no" %}selected{% endif %}>without a route</option>
+    </select>
+    <label>at least <input type="number" name="min" min="0" step="5" value="{{ f.min_minutes|default_if_none:''|floatformat:'-1' }}"> min</label>
+    <input type="hidden" name="sort" value="{{ f.sort }}">
+    {% if f.preset != "custom" %}<input type="hidden" name="range" value="{{ f.preset }}">{% endif %}
+    <button class="apply" type="submit">Apply</button>
+    <a class="clear" href="{% url 'catalog:workouts' %}">Clear</a>
+  </div>
+</form>
+
+<div class="tiles">
+  <div class="tile"><div class="label">Workouts</div><div class="value">{{ summary.count }}</div></div>
+  <div class="tile"><div class="label">Time</div><div class="value">{{ summary.time }}</div></div>
+  <div class="tile"><div class="label">Distance</div><div class="value">{{ summary.km|floatformat:"0g" }} km</div></div>
+  <div class="tile"><div class="label">Active kcal</div><div class="value">{{ summary.kcal|floatformat:"0g" }}</div></div>
+  <div class="tile"><div class="label">Avg heart rate</div><div class="value">{% if summary.hr %}{{ summary.hr|floatformat:0 }}{% else %}-{% endif %}</div></div>
+  <div class="tile"><div class="label">With a route</div><div class="value">{{ summary.routes }}</div></div>
+</div>
+
+<section class="card">
+  <h2 id="c-title">Minutes per week</h2>
+  <p class="sub" id="c-sub">By type. The five biggest types are named; the rest are Other.</p>
+  <div class="chart" id="c-weeks"></div>
+</section>
+
+<section class="card" id="map-card" hidden>
+  <h2>Routes</h2>
+  <p class="sub" id="map-sub">Every route in this selection. Click one to open it.</p>
+  <div id="map"></div>
+</section>
+
+<section class="card">
+  <h2>All {{ summary.count }}</h2>
+  {% if page.object_list %}
+  <div class="scroll"><table class="data workouts">
+    <thead><tr>
+      <th><a href="?{{ sort_links.date }}" class="{% if f.sort == 'date' %}on{% endif %}">when</a></th>
+      <th class="name">type</th>
+      <th><a href="?{{ sort_links.duration }}" class="{% if f.sort == 'duration' %}on{% endif %}">duration</a></th>
+      <th><a href="?{{ sort_links.distance }}" class="{% if f.sort == 'distance' %}on{% endif %}">distance</a></th>
+      <th><a href="?{{ sort_links.kcal }}" class="{% if f.sort == 'kcal' %}on{% endif %}">active kcal</a></th>
+      <th><a href="?{{ sort_links.hr }}" class="{% if f.sort == 'hr' %}on{% endif %}">avg HR</a></th>
+      <th>route</th>
+    </tr></thead>
+    <tbody>
+    {% for w in page.object_list %}
+    <tr>
+      <td>{{ w.start|date:"D M j, Y g:i a" }}</td>
+      <td class="name"><a href="{% url 'catalog:workout' w.pk %}">{{ w.name }}</a></td>
+      <td>{{ w.duration_text }}</td>
+      <td>{% if w.km %}{{ w.km|floatformat:2 }} km{% endif %}</td>
+      <td>{% if w.active_energy_kcal %}{{ w.active_energy_kcal|floatformat:0 }}{% endif %}</td>
+      <td>{% if w.avg_heart_rate %}{{ w.avg_heart_rate|floatformat:0 }}{% endif %}</td>
+      <td>{% if w.route_points %}<a href="{% url 'catalog:workout' w.pk %}">map</a>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% if page.has_other_pages %}
+  <div class="pager">
+    {% if page.has_previous %}<a href="?{{ page_links.prev }}">&larr; newer</a>{% endif %}
+    <span>page {{ page.number }} of {{ page.paginator.num_pages }}</span>
+    {% if page.has_next %}<a href="?{{ page_links.next }}">older &rarr;</a>{% endif %}
+  </div>
+  {% endif %}
+  {% else %}<p class="muted small">No workouts match.</p>{% endif %}
+</section>
+
+<script>
+(function () {
+  // Any filter change re-runs the query; choosing dates switches to a custom range.
+  const form = document.getElementById("filters");
+  form.querySelectorAll("input[type=checkbox], select").forEach((el) => el.addEventListener("change", () => form.submit()));
+  form.querySelectorAll("input[type=date]").forEach((el) => el.addEventListener("change", () => {
+    if (form.elements.from.value || form.elements.to.value) form.submit();
+  }));
+
+  const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+  const ink2 = dark ? "#c3c2b7" : "#52514e";
+  const grid = dark ? "#2c2c2a" : "#e1e0d9";
+  const baseline = dark ? "#383835" : "#c3c2b7";
+  const surface = dark ? "#1a1a19" : "#fcfcfb";
+  const muted = "#898781";
+  const cat = dark ? ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181"]
+                   : ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"];
+  const cfg = { displayModeBar: false, responsive: true };
+
+  fetch("{% url 'catalog:workouts_data' %}?{{ query|escapejs }}").then((r) => r.json()).then((d) => {
+    const colour = {};
+    d.chart.types.forEach((t, i) => { colour[t.name] = t.name === "Other" ? muted : cat[i % cat.length]; });
+    if (d.chart.bucket === "month") document.getElementById("c-title").textContent = "Minutes per month";
+    const wk = document.getElementById("c-weeks");
+    if (!d.chart.types.length) { wk.style.height = "auto"; wk.innerHTML = '<p class="small muted">No workouts match.</p>'; }
+    else Plotly.newPlot(wk, d.chart.types.map((t) => ({
+      x: d.chart.x, y: t.minutes, name: t.name, type: "bar",
+      marker: { color: colour[t.name], line: { color: surface, width: 1 } },
+      hovertemplate: "%{y:.0f} min<extra>" + t.name + "</extra>",
+    })), {
+      margin: { l: 55, r: 15, t: 30, b: 45 }, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      font: { family: "system-ui, sans-serif", size: 12, color: ink2 }, barmode: "stack", bargap: 0.15, barcornerradius: 3,
+      xaxis: { type: "date", gridcolor: grid, linecolor: baseline }, hovermode: "x unified",
+      yaxis: { title: { text: "minutes" }, gridcolor: grid, linecolor: baseline, zeroline: false, rangemode: "tozero" },
+      legend: { orientation: "h", y: 1.15, x: 0 },
+      hoverlabel: { bgcolor: surface, bordercolor: baseline, font: { color: ink2 } },
+    }, cfg);
+
+    if (!d.routes.length) return;
+    document.getElementById("map-card").hidden = false;
+    if (d.truncated) document.getElementById("map-sub").textContent =
+      "The newest " + d.routes.length + " of " + d.total + " routes in this selection. Click one to open it.";
+    // Frame where most routes are (10th-90th percentile of route centres), not
+    // the whole world a few trips would stretch it to; start dots keep the
+    // far-away ones findable when zoomed out.
+    const pct = (xs, p) => { const s = xs.slice().sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor(p * (s.length - 1)))]; };
+    const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+    const cLat = d.routes.map((r) => mean(r.lat)), cLon = d.routes.map((r) => mean(r.lon));
+    const lo = d.routes.length >= 10 ? 0.1 : 0, hi = 1 - lo;
+    const latMin = pct(cLat, lo) - 0.01, latMax = pct(cLat, hi) + 0.01;
+    const lonMin = pct(cLon, lo) - 0.01, lonMax = pct(cLon, hi) + 0.01;
+    const span = Math.max(latMax - latMin, (lonMax - lonMin) * Math.cos((latMin + latMax) / 2 * Math.PI / 180), 0.005);
+    const zoom = Math.max(1, Math.min(16, Math.log2(360 / span) - 1.2));
+    const map = document.getElementById("map");
+    const traces = d.routes.map((r) => ({
+      type: "scattermap", mode: "lines", lat: r.lat, lon: r.lon, name: r.name,
+      line: { width: 3, color: colour[r.name] || muted },
+      customdata: r.lat.map(() => r.id), text: r.lat.map(() => r.name + ", " + r.date),
+      hovertemplate: "%{text}<extra></extra>",
+    }));
+    traces.push({
+      type: "scattermap", mode: "markers", lat: d.routes.map((r) => r.lat[0]), lon: d.routes.map((r) => r.lon[0]),
+      marker: { size: 7, color: d.routes.map((r) => colour[r.name] || muted) },
+      customdata: d.routes.map((r) => r.id), text: d.routes.map((r) => r.name + ", " + r.date),
+      hovertemplate: "%{text}<extra></extra>",
+    });
+    Plotly.newPlot(map, traces, {
+      map: { style: dark ? "carto-darkmatter" : "carto-positron",
+             center: { lat: (latMin + latMax) / 2, lon: (lonMin + lonMax) / 2 }, zoom: zoom },
+      margin: { l: 0, r: 0, t: 0, b: 0 }, showlegend: false, paper_bgcolor: surface,
+    }, cfg);
+    map.on("plotly_click", (e) => {
+      const id = e.points && e.points[0] && e.points[0].customdata;
+      if (id) window.location = "{% url 'catalog:workouts' %}" + id + "/";
+    });
+  });
+})();
+</script>
+{% endblock %}

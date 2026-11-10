@@ -9,6 +9,7 @@ from catalog import health as hl
 from catalog import home as home_tabs
 from catalog import projects as pj
 from catalog import subscriptions as subs
+from catalog import workouts as wk
 from core.models import Project
 from sources.health.models import Workout
 
@@ -100,3 +101,20 @@ def project(request, pk):
     return render(request, "catalog/project.html",
                   {"section": "projects", "p": p, "range": r, "ranges": list(pj.RANGES), "d": d,
                    "chart": {"x": d["x"], "cost": d["cost"], "commits": d["commits"]}})
+
+
+def workouts(request):
+    f = wk.Filters.from_request(request.GET)
+    qs = f.queryset()
+    return render(request, "catalog/workouts.html", {
+        "section": "health", "f": f, "presets": list(wk.PRESETS), "types": wk.all_types(),
+        "summary": wk.summary(qs), "page": wk.page(f), "query": f.query(), "sorts": list(wk.SORTS),
+        "sort_links": {s: f.query(sort=s) for s in wk.SORTS},
+        "page_links": {"prev": f.query(page=f.page - 1), "next": f.query(page=f.page + 1)},
+        "preset_links": {p: f.query(range=p, **{"from": "", "to": ""}) for p in wk.PRESETS},
+    })
+
+
+def workouts_data(request):
+    f = wk.Filters.from_request(request.GET)
+    return JsonResponse({"chart": wk.chart(f), **wk.routes(f)})

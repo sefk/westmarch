@@ -101,7 +101,7 @@ table.workouts td.name, table.workouts th.name { text-align: left; }
 
 <section class="card">
   <h2>Workouts</h2>
-  <p class="sub">Latest {{ workouts|length }} in this range.</p>
+  <p class="sub">Latest {{ workouts|length }} in this range. <a href="{% url 'catalog:workouts' %}">Browse and filter all workouts &rarr;</a></p>
   {% if workouts %}
   <table class="data workouts">
     <thead><tr><th>when</th><th class="name">type</th><th>duration</th><th>distance</th><th>active kcal</th><th>avg HR</th><th>route</th></tr></thead>

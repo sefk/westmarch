@@ -395,6 +395,14 @@ always-on host, replacing studio, is open.
 - Absorb llm-use-charts into this project.
 - Borrow the MCP-server idea from Edi Life OS, not its stack.
 
+**2026-11-11**
+
+- Billable time (issue #23): the primary Google calendar is the authority.
+  An event bills when its title has a project's tag as a whole word, or a
+  guest is at the client's domains; terms (rate, caps, term, invoice
+  schedule) live in `core.BillingProject`, seeded with the DFO contract
+  with Ode, PB LLC. Entries are computed per request, not stored.
+
 [agentsview]: https://github.com/agentsview
 [luc]: ../../llm-use-charts
 [homepower]: ../../homepower

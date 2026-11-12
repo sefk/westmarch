@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Invoice {{ inv.label }}{% endblock %}
+
+{% block head %}
+<style>
+.invoice { max-width: 760px; }
+a { color: var(--series-1); }
+.parties { display: flex; justify-content: space-between; gap: 2rem; flex-wrap: wrap; margin: 1rem 0; white-space: pre-line; }
+.parties .label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+table.data { width: 100%; }
+table.data td.text, table.data th.text { text-align: left; white-space: normal; }
+tfoot td { font-weight: 650; border-bottom: none; }
+@media print {
+  header, .noprint { display: none; }
+  body { background: #fff; color: #000; font-size: 12px; }
+  .card { border: none; padding: 0; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="invoice">
+<p class="noprint small"><a href="{% url 'catalog:invoicing' %}">&larr; Invoicing</a> · print this page for a PDF</p>
+<section class="card">
+  <h1>Invoice: {{ inv.bp.name }}, {{ inv.label }}</h1>
+  <div class="parties">
+    <div><div class="label">From</div>{{ inv.bp.bill_from }}</div>
+    <div><div class="label">To</div>{{ inv.bp.bill_to }}</div>
+    <div><div class="label">Issued</div>{{ inv.issued|date:"M j, Y" }}{% if inv.due %}<br><span class="label">Due by</span><br>{{ inv.due }}{% endif %}</div>
+  </div>
+
+  {% if inv.over_cap %}
+  <p class="bad small noprint">This month is over its ${{ inv.cap|floatformat:"0g" }} contract cap; the contract asks you to tell Ramya first.</p>
+  {% endif %}
+
+  <table class="data">
+    <thead><tr><th>Date</th><th class="text">Description</th><th>Hours</th><th>Amount</th></tr></thead>
+    <tbody>
+    {% for r in inv.rows %}
+      <tr><td>{{ r.day|date:"M j" }}</td><td class="text">{{ r.description }}</td>
+        <td>{{ r.hours|floatformat:2 }}</td><td>${{ r.amount|floatformat:2 }}</td></tr>
+    {% empty %}
+      <tr><td colspan="4" class="text muted">No billable time this month.</td></tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr><td></td><td class="text">Total at ${{ inv.bp.rate_usd|floatformat:0 }}/hr</td>
+      <td>{{ inv.hours|floatformat:2 }}</td><td>${{ inv.amount|floatformat:2 }}</td></tr></tfoot>
+  </table>
+</section>
+</div>
+{% endblock %}

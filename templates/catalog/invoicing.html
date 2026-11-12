@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Invoicing{% endblock %}
+
+{% block head %}
+<style>
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin: 0.75rem 0 1rem; }
+.tile { background: var(--page); border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.9rem; }
+.tile .label { font-size: 0.8rem; color: var(--ink-2); }
+.tile .value { font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.3; }
+.bar { height: 10px; background: var(--track); border-radius: 5px; overflow: hidden; margin: 0.5rem 0 0.25rem; }
+.bar span { display: block; height: 100%; background: var(--series-1); }
+.bar.warn span { background: var(--status-warn); }
+.bar.over span { background: var(--status-critical); }
+a { color: var(--series-1); }
+.warn-text { color: var(--status-warn); font-weight: 600; }
+.scroll { overflow-x: auto; }
+table.data td.text, table.data th.text { text-align: left; white-space: normal; }
+tr.over td { color: var(--status-critical); }
+tr.zero td, tr.upcoming td { color: var(--muted); }
+tr.upcoming td { font-style: italic; }
+h2 + .sub { font-size: 0.8rem; color: var(--muted); margin: 0.15rem 0 0.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>Invoicing</h1>
+<p class="muted small">What hours can I bill, and where am I against the contract? Time comes from the primary
+calendar: titles with the project's tag, or guests at its domains.</p>
+
+{% for p in projects %}
+<section class="card">
+  <h2>{{ p.bp.name }}</h2>
+  <p class="sub">${{ p.bp.rate_usd|floatformat:0 }}/hr · {{ p.bp.term_start|date:"M j" }} to {{ p.bp.term_end|date:"M j, Y" }}
+    · tags {{ p.bp.tags|join:", " }} · domains {{ p.bp.attendee_domains|join:", " }}</p>
+
+  <div class="tiles">
+    <div class="tile"><div class="label">Hours logged</div><div class="value">{{ p.hours|floatformat:2 }}</div></div>
+    <div class="tile"><div class="label">Billable so far</div><div class="value">${{ p.amount|floatformat:2 }}</div></div>
+    {% if p.scheduled %}
+    <div class="tile"><div class="label">Scheduled, not yet worked</div><div class="value">{{ p.scheduled|floatformat:2 }}</div></div>
+    {% endif %}
+    {% if p.hours_cap %}
+    <div class="tile"><div class="label">Hours left of {{ p.hours_cap|floatformat:0 }}</div>
+      <div class="value {% if p.over %}bad{% endif %}">{{ p.remaining|floatformat:2 }}</div></div>
+    {% endif %}
+  </div>
+
+  {% if p.hours_cap %}
+  <div class="bar {% if p.over %}over{% elif p.warn %}warn{% endif %}"><span style="width: {{ p.pct }}%"></span></div>
+  {% if p.over %}
+  <p class="bad small">Over the {{ p.hours_cap|floatformat:0 }}-hour cap: tell Ramya before billing the excess.</p>
+  {% elif p.warn %}
+  <p class="warn-text small">Approaching the {{ p.hours_cap|floatformat:0 }}-hour cap: the contract asks you to tell Ramya.</p>
+  {% endif %}
+  {% endif %}
+
+  <h2 style="margin-top: 1rem">Invoices</h2>
+  <div class="scroll">
+  <table class="data">
+    <thead><tr><th>Month</th><th>Entries</th><th>Hours</th><th>Amount</th><th>Contract cap</th><th>Due</th><th class="text"></th></tr></thead>
+    <tbody>
+    {% for m in p.months %}
+      <tr class="{% if m.over_cap %}over{% endif %}">
+        <td>{{ m.label }}</td><td>{{ m.count }}</td><td>{{ m.hours|floatformat:2 }}</td>
+        <td>${{ m.amount|floatformat:2 }}</td>
+        <td>{% if m.cap %}${{ m.cap|floatformat:"0g" }}{% else %}-{% endif %}</td>
+        <td>{{ m.due|default:"-" }}</td>
+        <td class="text"><a href="{% url 'catalog:invoice' p.bp.slug m.month %}">invoice</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <h2 style="margin-top: 1rem">Entries</h2>
+  <p class="sub">Each rounds to the nearest {{ p.bp.increment_minutes }} minutes.
+    {% if p.overlaps %}{{ p.overlaps }} overlapped an earlier entry, so shared time counts once.{% endif %}
+    Only events that have ended are billed.</p>
+  <div class="scroll">
+  <table class="data">
+    <thead><tr><th>Date</th><th>Time</th><th class="text">What</th><th class="text">Matched</th><th>Hours</th></tr></thead>
+    <tbody>
+    {% for r in p.rows %}
+      <tr class="{% if r.upcoming %}upcoming{% elif r.over_cap %}over{% elif not r.hours %}zero{% endif %}">
+        <td>{{ r.day|date:"D M j" }}</td><td>{{ r.start|date:"g:i" }}-{{ r.end|date:"g:i A" }}</td>
+        <td class="text">{{ r.description }}</td><td class="text">{{ r.rule }}{% if r.upcoming %} (upcoming, not billed){% endif %}{% if r.overlap %} (overlap){% endif %}{% if r.over_cap %} (over cap){% endif %}</td>
+        <td>{{ r.hours|floatformat:2 }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5" class="text muted">No billable events in the term yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% empty %}
+<p class="muted">No active billing projects. Add one in the <code>core.BillingProject</code> table.</p>
+{% endfor %}
+{% endblock %}

@@ -2,15 +2,16 @@
 answers. Pages render HTML; chart data comes from JSON endpoints the page
 fetches and draws with plotly."""
 
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, render
 
 from catalog import health as hl
 from catalog import home as home_tabs
+from catalog import invoicing as inv
 from catalog import projects as pj
 from catalog import subscriptions as subs
 from catalog import workouts as wk
-from core.models import Project
+from core.models import BillingProject, Project
 from sources.health.models import Workout
 
 latest_loader_runs = home_tabs.latest_runs
@@ -118,3 +119,16 @@ def workouts(request):
 def workouts_data(request):
     f = wk.Filters.from_request(request.GET)
     return JsonResponse({"chart": wk.chart(f), **wk.routes(f)})
+
+
+def invoicing(request):
+    return render(request, "catalog/invoicing.html",
+                  {"section": "invoicing", "projects": [inv.summary(bp) for bp in inv.active_projects()]})
+
+
+def invoice(request, slug, month):
+    bp = get_object_or_404(BillingProject, slug=slug)
+    data = inv.invoice(bp, month)
+    if data is None:
+        raise Http404("bad month")
+    return render(request, "catalog/invoice.html", {"section": "invoicing", "inv": data})

@@ -99,3 +99,35 @@ class LoaderState(models.Model):
     @classmethod
     def set(cls, loader: str, key: str, value: str) -> None:
         cls.objects.update_or_create(loader=loader, key=key, defaults={"value": value})
+
+
+class BillingProject(models.Model):
+    """A project whose billable time is read off the primary calendar.
+
+    An event counts when its title contains one of `tags` as a whole word,
+    or it has an attendee at one of `attendee_domains`. `invoice_schedule`
+    is {"YYYY-MM": {"cap": dollars, "due": "YYYY-MM-DD"}} from the contract.
+    The catalog invoicing page does the matching; this is just the terms.
+    """
+
+    slug = models.SlugField(unique=True)
+    name = models.CharField(max_length=100)
+    project = models.ForeignKey(Project, null=True, blank=True, on_delete=models.SET_NULL, related_name="billing")
+    tags = models.JSONField(default=list)
+    attendee_domains = models.JSONField(default=list)
+    rate_usd = models.DecimalField(max_digits=8, decimal_places=2)
+    hours_cap = models.DecimalField(max_digits=7, decimal_places=2, null=True, blank=True)
+    amount_cap_usd = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    term_start = models.DateField()
+    term_end = models.DateField()
+    increment_minutes = models.PositiveSmallIntegerField(default=15)  # each entry rounds to nearest
+    invoice_schedule = models.JSONField(default=dict)
+    bill_from = models.TextField(blank=True)
+    bill_to = models.TextField(blank=True)
+    active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["slug"]
+
+    def __str__(self):
+        return self.slug

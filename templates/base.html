@@ -92,6 +92,17 @@ table.data th { color: var(--ink-2); font-weight: 600; }
 table.data td:first-child, table.data th:first-child { text-align: left; }
 .bad { color: var(--status-critical); font-weight: 600; }
 .good { color: var(--status-good); }
+.warn { color: var(--status-warn); }
+.banner {
+  border: 1px solid var(--status-warn);
+  border-left-width: 4px;
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 0.6rem 1rem;
+  margin: 0 0 1.25rem;
+  font-size: 0.9rem;
+}
+.banner strong { color: var(--status-warn); }
 </style>
 {% block head %}{% endblock %}
 </head>

@@ -11,7 +11,7 @@
 .tabs a.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--series-1); }
 .tabs a .n { color: var(--muted); font-size: 0.75rem; margin-left: 0.25rem; }
 .status { font-size: 0.85rem; color: var(--ink-2); margin: 0 0 1rem; }
-.status .bad { font-weight: 600; }
+.status .bad, .status .warn { font-weight: 600; }
 .pages { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
 .page { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
         padding: 0.9rem 1.1rem; text-decoration: none; color: inherit; }
@@ -40,7 +40,9 @@ table.loaders td.msg { text-align: left; color: var(--ink-2); max-width: 32rem; 
 </nav>
 
 <p class="status">
-  {% if failing %}<span class="bad">{{ failing|length }} loader{{ failing|pluralize }} failing:</span> {{ failing|join:", " }}.
+  {% if failing or stale %}
+    {% if failing %}<span class="bad">{{ failing|length }} loader{{ failing|pluralize }} failing:</span> {{ failing|join:", " }}.{% endif %}
+    {% if stale %}<span class="warn">{{ stale|length }} loader{{ stale|pluralize }} stale:</span> {{ stale|join:"; " }}.{% endif %}
   <a href="?tab=tech#loaders">Details</a>
   {% elif loader_count %}All {{ loader_count }} loaders ok. <a href="?tab=tech#loaders">Details</a>
   {% else %}No loader has run yet: <code>uv run manage.py load --all</code>{% endif %}
@@ -70,7 +72,7 @@ table.loaders td.msg { text-align: left; color: var(--ink-2); max-width: 32rem; 
     <tr>
       <td>{{ run.loader }}</td>
       <td title="{{ run.started|date:'c' }}">{{ run.started|date:"M j, H:i" }} <span class="muted">({{ run.started|timesince }} ago)</span></td>
-      <td>{% if run.ok is None %}<span class="muted">running</span>{% elif run.ok %}<span class="good">ok</span>{% else %}<span class="bad">FAILED</span>{% endif %}</td>
+      <td>{% if run.ok is None %}<span class="muted">running</span>{% elif run.state == "stale" %}<span class="warn">STALE</span>{% elif run.ok %}<span class="good">ok</span>{% else %}<span class="bad">FAILED</span>{% endif %}</td>
       <td>{{ run.rows }}</td>
       <td class="msg" title="{{ run.message }}">{{ run.first_line }}</td>
     </tr>

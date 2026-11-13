@@ -10,6 +10,7 @@
 
 from django.core.management.base import BaseCommand, CommandError
 
+from core import freshness
 from core.loaders import registry, run_loader
 from core.models import LoaderRun
 
@@ -26,9 +27,13 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         loaders = registry()
         if not opts["names"] and not opts["all"]:
-            for name, loader in loaders.items():
+            rows = [(name, loader.cadence) for name, loader in loaders.items()]
+            rows += [(name, "push") for name in freshness.STALE_AFTER if name not in loaders]  # the phone runs these
+            for name, cadence in rows:
                 last = LoaderRun.objects.filter(loader=name).first()
-                self.stdout.write(f"{name:18} {loader.cadence:7} {last or 'never run'}")
+                late = freshness.stale(name)
+                self.stdout.write(f"{name:18} {cadence:7} {last or 'never run'}"
+                                  + (f"  STALE: {late.text}" if late else ""))
             return
         if opts["all"]:
             chosen = [l for l in loaders.values() if not opts["cadence"] or l.cadence == opts["cadence"]]

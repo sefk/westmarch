@@ -258,7 +258,11 @@ daylight, resting HR, HRV, sleep stages, workouts) for the days it touched;
 Check that data is landing at `/ingest/health/status/` (counts and the
 latest point per metric), or at the coverage chart at the bottom of
 `/body/`, which shows per month and data type which exports are still
-missing (from `HEALTH_HISTORY_START`, default `2015-01`). Replay a saved payload, or backfill from a manual
+missing (from `HEALTH_HISTORY_START`, default `2015-01`). Health is also not "ok" when the phone goes quiet: if the newest accepted
+batch is more than a day old, the loader shows as **STALE** (home status line,
+the Tech tab's loader table, `manage.py load`, so `bin/status`) and the
+health pages carry a warning banner. The rule lives in `core/freshness.py`.
+Replay a saved payload, or backfill from a manual
 JSON export, with `uv run manage.py health_import file.json[.gz]`.
 
 Phone setup: two automations of type REST API (one for Health Metrics, one

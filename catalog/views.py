@@ -11,6 +11,7 @@ from catalog import invoicing as inv
 from catalog import projects as pj
 from catalog import subscriptions as subs
 from catalog import workouts as wk
+from core import freshness
 from core.models import BillingProject, Project
 from sources.health.models import Workout
 
@@ -59,7 +60,7 @@ def health(request):
         request,
         "catalog/health.html",
         {"section": "health", "range": r, "ranges": list(hl.RANGES), "summary": hl.summary(),
-         "workouts": hl.workouts(r)},
+         "workouts": hl.workouts(r), "stale": freshness.stale("health")},
     )
 
 
@@ -69,7 +70,8 @@ def health_data(request):
 
 def workout(request, pk):
     w = get_object_or_404(Workout.objects.defer("raw"), pk=pk)
-    return render(request, "catalog/workout.html", {"section": "health", "w": w})
+    return render(request, "catalog/workout.html",
+                  {"section": "health", "w": w, "stale": freshness.stale("health")})
 
 
 def workout_data(request, pk):
@@ -108,7 +110,7 @@ def workouts(request):
     f = wk.Filters.from_request(request.GET)
     qs = f.queryset()
     return render(request, "catalog/workouts.html", {
-        "section": "health", "f": f, "presets": list(wk.PRESETS), "types": wk.all_types(),
+        "section": "health", "stale": freshness.stale("health"), "f": f, "presets": list(wk.PRESETS), "types": wk.all_types(),
         "summary": wk.summary(qs), "page": wk.page(f), "query": f.query(), "sorts": list(wk.SORTS),
         "sort_links": {s: f.query(sort=s) for s in wk.SORTS},
         "page_links": {"prev": f.query(page=f.page - 1), "next": f.query(page=f.page + 1)},

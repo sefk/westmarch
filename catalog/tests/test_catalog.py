@@ -172,3 +172,38 @@ def test_ago():
     from catalog.home import _ago
 
     assert _ago(timedelta(minutes=23)) == "23m" and _ago(timedelta(hours=5)) == "5h" and _ago(timedelta(days=3)) == "3d"
+
+
+@pytest.mark.django_db
+def test_stale_health_is_not_ok_in_loader_status(client):
+    from sources.health.models import IngestBatch
+
+    t = timezone.now()
+    LoaderRun.objects.create(loader="health", started=t - timedelta(days=3), ok=True, rows=10, message="10 points")
+    LoaderRun.objects.create(loader="herdr", started=t, ok=True, rows=3, message="3 rows")
+    IngestBatch.objects.create(received_at=t - timedelta(days=3), sha256="x")
+    home = client.get("/").content.decode()
+    assert "1 loader stale:" in home and "health: no data for 3d" in home and "All 2 loaders ok" not in home
+    tech = client.get("/?tab=tech").content.decode()
+    assert "STALE" in tech and "1 of 2 ok" in tech
+    IngestBatch.objects.create(received_at=t - timedelta(hours=2), sha256="y")  # the phone caught up
+    assert "All 2 loaders ok" in client.get("/").content.decode()
+    assert "STALE" not in client.get("/?tab=tech").content.decode()
+
+
+@pytest.mark.django_db
+def test_health_pages_warn_when_stale(client):
+    from sources.health.models import IngestBatch, Workout
+
+    t = timezone.now()
+    w = Workout.objects.create(external_id="w1", name="Run", start=t - timedelta(days=4),
+                           end=t - timedelta(days=4, hours=-1), duration_seconds=3600)
+    pages = ["/body/", "/body/workouts/", f"/body/workouts/{w.pk}/"]
+    for url in pages:  # no data ever
+        assert "Health data is stale." in client.get(url).content.decode(), url
+    IngestBatch.objects.create(received_at=t - timedelta(days=2), sha256="x")
+    body = client.get("/body/").content.decode()
+    assert "Health data is stale." in body and "No data for 2d" in body
+    IngestBatch.objects.create(received_at=t - timedelta(hours=1), sha256="y")
+    for url in pages:
+        assert "Health data is stale." not in client.get(url).content.decode(), url

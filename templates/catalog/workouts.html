@@ -45,6 +45,7 @@ table.workouts th a.on { color: var(--ink); text-decoration: underline; }
 {% endblock %}
 
 {% block content %}
+{% include "catalog/_stale_banner.html" %}
 <a class="back" href="{% url 'catalog:health' %}">&larr; Health</a>
 <h1>Workouts</h1>
 

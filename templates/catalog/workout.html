@@ -20,6 +20,7 @@
 {% endblock %}
 
 {% block content %}
+{% include "catalog/_stale_banner.html" %}
 <a class="back" href="{% url 'catalog:health' %}">&larr; Health</a>
 <h1 style="margin-top:0.4rem">{{ w.name }}, {{ w.start|date:"l, F j, Y, g:i a" }}</h1>
 <div class="facts">

@@ -1,0 +1,7 @@
+{% if stale %}
+<div class="banner" role="alert">
+  <strong>Health data is stale.</strong> {{ stale.text|capfirst }}.
+  Check that Health Auto Export is still syncing on the phone
+  (<a href="/ingest/health/status/">ingest status</a>); a sync backfills the gap.
+</div>
+{% endif %}

@@ -11,6 +11,7 @@ from datetime import timedelta
 from django.db.models import Count, Max, Q, Sum
 from django.utils import timezone
 
+from core import freshness
 from core.models import LoaderRun
 
 log = logging.getLogger(__name__)
@@ -86,10 +87,10 @@ def trips_headlines(now):
 
 
 def tech_headlines(now):
-    runs = latest_runs()
-    failing = [r.loader for r in runs if r.ok is False]
+    runs = latest_runs(now)
+    bad = [r for r in runs if r.state in ("failed", "stale")]
     backup = next((r for r in runs if r.loader == "backup" and r.ok), None)
-    out = [("Loaders", f"{len(runs) - len(failing)} of {len(runs)} ok")]
+    out = [("Loaders", f"{len(runs) - len(bad)} of {len(runs)} ok")]
     if backup:
         out.append(("Last backup", f"{_ago(now - backup.started)} ago"))
     return out
@@ -102,7 +103,8 @@ def _ago(delta):
     return f"{minutes / 60:.0f}h" if minutes < 48 * 60 else f"{minutes / 1440:.0f}d"
 
 
-def latest_runs():
+def latest_runs(now=None):
+    now = now or timezone.now()
     latest = LoaderRun.objects.values("loader").annotate(at=Max("started"))
     q = Q()
     for row in latest:
@@ -113,6 +115,10 @@ def latest_runs():
     for run in LoaderRun.objects.filter(q).order_by("loader"):
         first = (run.message or "").strip().splitlines()
         run.first_line = first[0] if first else ""
+        late = freshness.stale(run.loader, now) if run.ok else None
+        run.state = "running" if run.ok is None else "failed" if run.ok is False else "stale" if late else "ok"
+        if late:
+            run.first_line = late.text
         runs.append(run)
     return runs
 
@@ -174,9 +180,10 @@ def tab_context(tab, now=None):
             except Exception:
                 log.exception("home headline for %s failed", spec["title"])
         pages.append(page)
-    runs = latest_runs()
-    failing = [r.loader for r in runs if r.ok is False]
+    runs = latest_runs(now)
+    failing = [r.loader for r in runs if r.state == "failed"]
+    stale = [f"{r.loader}: {r.first_line}" for r in runs if r.state == "stale"]
     tabs = [{"key": k, "label": label, "live": sum(1 for p in PAGES[k] if "url_name" in p or "anchor" in p)}
             for k, label in TABS]
     return {"tab": tab, "tabs": tabs, "pages": pages, "runs": runs if tab == "tech" else [],
-            "loader_count": len(runs), "failing": failing}
+            "loader_count": len(runs), "failing": failing, "stale": stale}

@@ -323,6 +323,26 @@ def test_prompts_outside_the_term_do_not_count(abp):
     assert inv.entries(abp, NOW) == []
 
 
+def test_a_block_straddling_the_term_bills_only_the_part_inside(abp):
+    agent_session("11-08", ["23:50"])  # the day before the term starts
+    agent_session("11-09", ["00:05", "00:15"])  # one block, 23:50-00:20; the 20 minutes inside round to 0.25
+    [row] = inv.entries(abp, NOW)
+    assert (row["start"].strftime("%m-%d %H:%M"), row["end"].strftime("%m-%d %H:%M")) == ("11-09 00:00", "11-09 00:20")
+    assert row["hours"] == Decimal("0.25")
+    agent_session("12-18", ["23:50"])
+    agent_session("12-19", ["00:05"])  # the tail of this block runs past the term's end
+    last = inv.entries(abp, NOW)[-1]
+    assert last["end"].strftime("%m-%d %H:%M") == "12-19 00:00" and last["hours"] == Decimal("0.25")
+
+
+def test_a_tail_longer_than_the_gap_does_not_bill_time_twice(abp):
+    abp.agent_gap_minutes, abp.agent_tail_minutes = 15, 30
+    abp.save()
+    agent_session("11-16", ["09:00", "09:20"])  # 20 apart: separate runs, but the first tail reaches the second
+    [row] = inv.entries(abp, NOW)
+    assert (row["start"].strftime("%H:%M"), row["end"].strftime("%H:%M"), row["hours"]) == ("09:00", "09:50", Decimal("0.75"))  # 50 min, once (not 60)
+
+
 def test_an_unfinished_block_does_not_bill_yet(abp):
     agent_session("11-16", ["10:00", "10:10"])  # runs to 10:15
     now = at("11-16", "10:12")

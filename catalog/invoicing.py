@@ -166,7 +166,7 @@ def candidates(bp, lo, hi):
 
 
 def typed_prompts(bp, lo, hi):
-    """(instant, repo) for each prompt I typed to an agent inside [lo, hi), time-ordered.
+    """(instant, repo) for each prompt I typed to an agent in [lo, hi), time-ordered.
     `repo` is the first directory under the agent path ("" for the path itself)."""
     dirs = bp.agent_dirs()
     if not (bp.use_agent_activity and dirs):
@@ -188,16 +188,24 @@ def typed_prompts(bp, lo, hi):
 
 
 def agent_blocks(bp, lo, hi):
-    """(start, end, repos) work blocks from typed prompts; concurrent sessions share a block."""
+    """(start, end, repos) work blocks from typed prompts, clipped to [lo, hi); concurrent sessions share one.
+    Prompts just outside the term still join a block that reaches into it."""
     gap, tail = timedelta(minutes=bp.agent_gap_minutes), timedelta(minutes=bp.agent_tail_minutes)
-    blocks = []  # [first, last, repos]
-    for when, repo in typed_prompts(bp, lo, hi):
-        if blocks and when - blocks[-1][1] <= gap:
-            blocks[-1][1] = when
-            blocks[-1][2].add(repo)
+    runs = []  # [first prompt, last prompt, repos]
+    for when, repo in typed_prompts(bp, lo - gap - tail, hi + gap):
+        if runs and when - runs[-1][1] <= gap:
+            runs[-1][1] = when
+            runs[-1][2].add(repo)
         else:
-            blocks.append([when, when, {repo}])
-    return [(a, min(b + tail, hi), repos) for a, b, repos in blocks]
+            runs.append([when, when, {repo}])
+    blocks = []  # [start, end, repos]; a tail longer than the gap can reach the next run, so merge those
+    for first, last, repos in runs:
+        if blocks and first < blocks[-1][1]:
+            blocks[-1][1] = max(blocks[-1][1], last + tail)
+            blocks[-1][2] |= repos
+        else:
+            blocks.append([first, last + tail, set(repos)])
+    return [(max(a, lo), min(b, hi), repos) for a, b, repos in blocks if max(a, lo) < min(b, hi)]
 
 
 def minutes_inside(start, end, spans):

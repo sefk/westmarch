@@ -572,3 +572,9 @@ def test_saving_a_note_needs_the_csrf_token(abp):
     from django.test import Client
     strict = Client(enforce_csrf_checks=True)
     assert strict.post(reverse("catalog:note"), {"slug": "t", "day": "2026-11-16", "text": "x"}).status_code == 403
+
+
+def test_invoicing_page_title_and_script_placement(abp, client):
+    page = client.get(reverse("catalog:invoicing")).content.decode()
+    assert "<title>Invoicing" in page and "<script>" not in page.split("</title>")[0]
+    assert page.count("<script>") == 1  # the one that reopens a saved day, in the body

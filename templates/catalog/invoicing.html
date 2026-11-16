@@ -1,9 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Invoicing<script>
-// after saving a note, land with that day open
-document.querySelectorAll('details[id^="day-"]').forEach(function (d) { if (location.hash === '#' + d.id) d.open = true; });
-</script>
-{% endblock %}
+{% block title %}Invoicing{% endblock %}
 
 {% block head %}
 <style>
@@ -36,10 +32,6 @@ details summary { cursor: pointer; }
 .note button { font: inherit; padding: 0.25rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--page); color: var(--ink); cursor: pointer; }
 h2 + .sub { font-size: 0.8rem; color: var(--muted); margin: 0.15rem 0 0.5rem; }
 </style>
-<script>
-// after saving a note, land with that day open
-document.querySelectorAll('details[id^="day-"]').forEach(function (d) { if (location.hash === '#' + d.id) d.open = true; });
-</script>
 {% endblock %}
 
 {% block content %}

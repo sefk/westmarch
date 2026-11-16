@@ -6,6 +6,8 @@ import fcntl
 import tempfile
 from pathlib import Path
 
+from datetime import date
+
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -20,7 +22,7 @@ from catalog import subscriptions as subs
 from catalog import workouts as wk
 from core import freshness
 from core.loaders import registry, run_loader
-from core.models import BillingProject, LoaderRun, Project
+from core.models import BillingNote, BillingProject, LoaderRun, Project
 from sources.health.models import Workout
 
 latest_loader_runs = home_tabs.latest_runs
@@ -173,6 +175,23 @@ def rescan(request):
     failed = [name for name, run in runs.items() if not run.ok or skipped(run)]
     query = f"rescan=failed&failed={','.join(failed)}" if failed else "rescan=ok"
     return redirect(f"{reverse('catalog:invoicing')}?{query}")
+
+
+@require_POST
+@csrf_protect
+def note(request):
+    """Save (or, left empty, clear) the description of one day's development work."""
+    bp = get_object_or_404(BillingProject, slug=request.POST.get("slug", ""))
+    try:
+        day = date.fromisoformat(request.POST.get("day", ""))
+    except ValueError:
+        raise Http404("bad day") from None
+    text = " ".join(request.POST.get("text", "").split())[:BillingNote._meta.get_field("text").max_length]
+    if text:
+        BillingNote.objects.update_or_create(billing_project=bp, day=day, defaults={"text": text})
+    else:
+        BillingNote.objects.filter(billing_project=bp, day=day).delete()
+    return redirect(f"{reverse('catalog:invoicing')}#day-{bp.slug}-{day:%Y-%m-%d}")
 
 
 def invoice(request, slug, month):

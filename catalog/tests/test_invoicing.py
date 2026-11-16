@@ -275,15 +275,16 @@ def test_prompts_within_the_gap_make_one_block_with_a_tail(abp):
 def test_a_longer_gap_splits_blocks_and_a_lone_prompt_is_too_short(abp):
     agent_session("11-16", ["09:00", "09:15", "09:31", "13:00"])  # 9:15 joins 9:00; 9:31 is 16 min on; 13:00 is alone
     rows = inv.entries(abp, NOW)
-    assert [(r["start"].strftime("%H:%M"), r["end"].strftime("%H:%M")) for r in rows] == [("09:00", "09:20")]
-    assert rows[0]["hours"] == Decimal("0.25")  # 20 min -> nearest quarter hour
-    # the 9:31 prompt (5 min) and the 13:00 prompt (5 min) each round to nothing and don't clutter the list
+    assert [(r["start"].strftime("%H:%M"), r["end"].strftime("%H:%M"), r["hours"]) for r in rows] == [
+        ("09:00", "09:20", Decimal("0.25")), ("09:31", "09:36", 0), ("13:00", "13:05", 0)]  # 20 min -> nearest quarter
+    [line] = inv.lines(abp, rows, {})  # the two 5-minute stretches round to nothing: they show only in the detail
+    assert line["hours"] == Decimal("0.25") and len(line["parts"]) == 3
 
 
 def test_agent_time_is_not_the_session_span(abp):
     Session.objects.create(session_id="long", agent="claude", cwd="/agent/dfo", started_at=at("11-11", "20:57"),
                            ended_at=at("11-12", "09:13"), typed_prompts=[at("11-11", "21:00").astimezone(dt_timezone.utc).isoformat()])
-    assert inv.entries(abp, NOW) == []  # one prompt; twelve hours of agent work bill nothing
+    assert inv.lines(abp, inv.entries(abp, NOW), {}) == []  # one prompt; twelve hours of agent work bill nothing
 
 
 def test_concurrent_sessions_share_one_block_and_name_their_repos(abp):
@@ -297,12 +298,13 @@ def test_concurrent_sessions_share_one_block_and_name_their_repos(abp):
 def test_calendar_wins_over_agent_time(abp, cal):
     ev(cal, "DFO: planning", "11-16", "10:00", "11:00")
     agent_session("11-16", ["09:50", "10:05", "10:20", "10:40"])  # block 9:50-10:45; 10:00-10:45 is on the calendar
-    rows = inv.entries(abp, NOW)
+    rows = inv.lines(abp, inv.entries(abp, NOW), {})
     assert [(r["agent"], r["hours"], r["overlap"]) for r in rows] == [(True, Decimal("0.25"), True), (False, Decimal(1), False)]
     assert rows[1]["title"] == "DFO: planning"  # the meeting keeps its full hour
     agent_session("11-17", ["10:00", "10:10"])
     ev(cal, "DFO: all morning", "11-17", "09:00", "12:00")
-    assert [r["title"] for r in inv.entries(abp, NOW) if r["day"] == date(2026, 11, 17)] == ["DFO: all morning"]
+    day = [r for r in inv.lines(abp, inv.entries(abp, NOW), {}) if r["day"] == date(2026, 11, 17)]
+    assert [r["title"] for r in day] == ["DFO: all morning"]
 
 
 def test_only_my_dfo_sessions_count(abp):
@@ -471,3 +473,102 @@ def test_page_shows_when_each_source_last_loaded(abp, client):
     assert "Calendar loaded" in page and "Agent sessions never loaded" in page
     assert ">Rescan<" in page
     assert "bogus" not in client.get(reverse("catalog:invoicing") + "?rescan=failed&failed=bogus").content.decode()
+
+
+# --- daily roll-up and notes ----------------------------------------------------------------------------------------
+
+def test_a_days_agent_stretches_roll_up_into_one_line_with_the_working_shown(abp, cal):
+    agent_session("11-16", ["07:52", "07:53", "08:03"], cwd="/agent/dfo/website")  # 7:52-8:08, 16 min -> 0.25
+    agent_session("11-16", ["14:00", "14:10", "14:25"], cwd="/agent/dfo/website")  # 14:00-14:30, 30 min -> 0.5
+    ev(cal, "DFO: planning", "11-16", "10:00", "11:00")
+    rows = inv.entries(abp, NOW)
+    assert len(rows) == 3
+    a, meeting, b = rows
+    assert a["calc"] == {"prompts": 3, "first": at("11-16", "07:52"), "last": at("11-16", "08:03"), "tail": 5,
+                         "gross": 16, "calendar": 0, "net": 16, "increment": 15}
+    lines = inv.lines(abp, rows, {})
+    assert [(ln["agent"], ln["hours"]) for ln in lines] == [(True, Decimal("0.75")), (False, Decimal(1))]
+    day = lines[0]
+    assert (day["parts"], day["amount"], day["rule"]) == ([a, b], Decimal(150), "agent: 2 stretches")
+    assert (day["start"], day["end"]) == (a["start"], b["end"])
+    assert day["description"] == "Development work (website)" and day["note"] == ""
+    assert lines[1]["parts"] == [] and lines[1]["title"] == "DFO: planning"  # meetings are not rolled up
+
+
+def test_the_note_describes_the_day(abp):
+    from core.models import BillingNote
+    agent_session("11-16", ["07:52", "07:53", "08:03"])
+    BillingNote.objects.create(billing_project=abp, day=date(2026, 11, 16), text="API Keys (website/142)")
+    [day] = inv.summary(abp, NOW)["lines"]
+    assert day["description"] == "API Keys (website/142)" and day["note"] == "API Keys (website/142)"
+
+
+def test_calendar_overlap_shows_in_the_arithmetic(abp, cal):
+    ev(cal, "DFO: planning", "11-16", "10:00", "11:00")
+    agent_session("11-16", ["09:50", "10:05"])  # 9:50-10:10: 10 min before the meeting, 10 inside it
+    [agent, _] = inv.entries(abp, NOW)
+    assert (agent["calc"]["gross"], agent["calc"]["calendar"], agent["calc"]["net"]) == (20, 10, 10)
+    assert agent["overlap"] and agent["hours"] == Decimal("0.25")
+
+
+def test_a_day_with_only_unbillable_stretches_has_no_line(abp):
+    agent_session("11-16", ["09:00"])
+    assert len(inv.entries(abp, NOW)) == 1 and inv.lines(abp, inv.entries(abp, NOW), {}) == []
+
+
+def test_finished_and_upcoming_stretches_of_a_day_are_separate_lines(abp):
+    agent_session("11-16", ["09:00", "09:10"])
+    agent_session("11-16", ["15:00", "15:10"])
+    lines = inv.summary(abp, at("11-16", "15:12"))["lines"]
+    assert [(ln["upcoming"], ln["hours"]) for ln in lines] == [(False, Decimal("0.25")), (True, Decimal("0.25"))]
+
+
+def test_invoice_rolls_up_by_day_and_flags_undescribed_days(abp):
+    from core.models import BillingNote
+    agent_session("11-16", ["09:00", "09:10"])
+    agent_session("11-16", ["14:00", "14:10", "14:25"])
+    agent_session("11-17", ["09:00", "09:10"])
+    BillingNote.objects.create(billing_project=abp, day=date(2026, 11, 16), text="API Keys (website/142)")
+    data = inv.invoice(abp, "2026-11", NOW)
+    assert [(r["day"].day, r["description"], r["hours"]) for r in data["rows"]] == [
+        (16, "API Keys (website/142)", Decimal("0.75")), (17, "Development work", Decimal("0.25"))]
+    assert data["hours"] == Decimal(1) and data["undescribed"] == [date(2026, 11, 17)]
+
+
+def test_entries_page_expands_a_day_and_the_invoice_page_does_not(abp, client):
+    from core.models import BillingNote
+    agent_session("11-16", ["07:52", "07:53", "08:03"])
+    BillingNote.objects.create(billing_project=abp, day=date(2026, 11, 16), text="API Keys (website/142)")
+    page = client.get(reverse("catalog:invoicing")).content.decode()
+    assert "API Keys (website/142)" in page and '<details id="day-t-2026-11-16">' in page
+    assert "3 prompts, 7:52 to 8:03" in page and "= 16 min" in page and "nearest 15 = 0.25 h" in page
+    assert 'name="text"' in page and 'name="csrfmiddlewaretoken"' in page
+    inv_page = client.get(reverse("catalog:invoice", args=[abp.slug, "2026-11"])).content.decode()
+    assert "API Keys (website/142)" in inv_page and "<details" not in inv_page and "prompts" not in inv_page
+
+
+def test_invoice_page_names_the_undescribed_days(abp, client):
+    agent_session("11-16", ["07:52", "07:53", "08:03"])
+    page = " ".join(client.get(reverse("catalog:invoice", args=[abp.slug, "2026-11"])).content.decode().split())
+    assert "1 day of development work has no description yet (Nov 16)" in page
+
+
+def test_saving_a_note(abp, client):
+    from core.models import BillingNote
+    url = reverse("catalog:note")
+    resp = client.post(url, {"slug": "t", "day": "2026-11-16", "text": "  API Keys   (website/142) "})
+    assert resp.status_code == 302 and resp.url == reverse("catalog:invoicing") + "#day-t-2026-11-16"
+    assert BillingNote.objects.get().text == "API Keys (website/142)"
+    client.post(url, {"slug": "t", "day": "2026-11-16", "text": "Edited"})
+    assert BillingNote.objects.get().text == "Edited"
+    client.post(url, {"slug": "t", "day": "2026-11-16", "text": "  "})  # emptied: cleared
+    assert BillingNote.objects.count() == 0
+    assert client.post(url, {"slug": "t", "day": "nope", "text": "x"}).status_code == 404
+    assert client.post(url, {"slug": "zzz", "day": "2026-11-16", "text": "x"}).status_code == 404
+    assert client.get(url).status_code == 405
+
+
+def test_saving_a_note_needs_the_csrf_token(abp):
+    from django.test import Client
+    strict = Client(enforce_csrf_checks=True)
+    assert strict.post(reverse("catalog:note"), {"slug": "t", "day": "2026-11-16", "text": "x"}).status_code == 403

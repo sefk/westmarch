@@ -5,6 +5,7 @@
 <style>
 .invoice { max-width: 760px; }
 a { color: var(--series-1); }
+.warn-text { color: var(--status-warn); font-weight: 600; }
 .parties { display: flex; justify-content: space-between; gap: 2rem; flex-wrap: wrap; margin: 1rem 0; white-space: pre-line; }
 .parties .label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 table.data { width: 100%; }
@@ -31,6 +32,13 @@ tfoot td { font-weight: 650; border-bottom: none; }
 
   {% if inv.over_cap %}
   <p class="bad small noprint">This month is over its ${{ inv.cap|floatformat:"0g" }} contract cap; the contract asks you to tell Ramya first.</p>
+  {% endif %}
+
+  {% if inv.undescribed %}
+  <p class="warn-text small noprint">{{ inv.undescribed|length }} day{{ inv.undescribed|length|pluralize }} of development work
+    {{ inv.undescribed|length|pluralize:"has,have" }} no description yet
+    ({% for d in inv.undescribed %}{{ d|date:"M j" }}{% if not forloop.last %}, {% endif %}{% endfor %}): the invoice says
+    "Development work" for them. Describe them on the <a href="{% url 'catalog:invoicing' %}">Invoicing page</a>.</p>
   {% endif %}
 
   <table class="data">

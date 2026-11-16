@@ -147,3 +147,19 @@ class BillingProject(models.Model):
     def agent_dirs(self):
         """`agent_paths` as absolute paths without trailing slashes."""
         return [os.path.expanduser(p).rstrip("/") for p in self.agent_paths if p.strip("/ ")]
+
+
+class BillingNote(models.Model):
+    """What I'd tell the client I did on one day, for the development work invoicing rolls up from
+    agent activity (the calendar entries describe themselves). Written by hand on the invoicing page."""
+
+    billing_project = models.ForeignKey(BillingProject, on_delete=models.CASCADE, related_name="notes")
+    day = models.DateField()
+    text = models.CharField(max_length=300)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["billing_project", "day"], name="one_note_per_day")]
+        ordering = ["day"]
+
+    def __str__(self):
+        return f"{self.billing_project} {self.day}: {self.text}"

@@ -14,6 +14,10 @@ to the last plus `agent_tail_minutes` (reading the answer). Time agents work
 alone, before the first prompt or after the tail, never bills. A calendar
 entry always wins: the part of an agent block inside one is dropped.
 
+`entries` lists every stretch with its arithmetic. `lines` is what the page
+and the invoice show: calendar entries one each, agent stretches rolled up
+into one line per day, described by a note I write (core.BillingNote).
+
 Recurring meetings are expanded: the mirror keeps one master per series
 (with its RRULE/EXDATE/RDATE), so its occurrences inside the term are
 generated here, less any occurrence replaced or cancelled by an exception
@@ -188,24 +192,32 @@ def typed_prompts(bp, lo, hi):
 
 
 def agent_blocks(bp, lo, hi):
-    """(start, end, repos) work blocks from typed prompts, clipped to [lo, hi); concurrent sessions share one.
-    Prompts just outside the term still join a block that reaches into it."""
+    """Work blocks from typed prompts, clipped to [lo, hi); concurrent sessions share one.
+    Prompts just outside the term still join a block that reaches into it.
+    Each is {"start", "end", "repos", "prompts": [instants inside the block]}."""
     gap, tail = timedelta(minutes=bp.agent_gap_minutes), timedelta(minutes=bp.agent_tail_minutes)
-    runs = []  # [first prompt, last prompt, repos]
+    runs = []  # [first prompt, last prompt, repos, prompt instants]
     for when, repo in typed_prompts(bp, lo - gap - tail, hi + gap):
         if runs and when - runs[-1][1] <= gap:
             runs[-1][1] = when
             runs[-1][2].add(repo)
+            runs[-1][3].append(when)
         else:
-            runs.append([when, when, {repo}])
-    blocks = []  # [start, end, repos]; a tail longer than the gap can reach the next run, so merge those
-    for first, last, repos in runs:
+            runs.append([when, when, {repo}, [when]])
+    blocks = []  # [start, end, repos, prompts]; a tail longer than the gap can reach the next run, so merge those
+    for first, last, repos, prompts in runs:
         if blocks and first < blocks[-1][1]:
             blocks[-1][1] = max(blocks[-1][1], last + tail)
             blocks[-1][2] |= repos
+            blocks[-1][3] += prompts
         else:
-            blocks.append([first, last + tail, set(repos)])
-    return [(max(a, lo), min(b, hi), repos) for a, b, repos in blocks if max(a, lo) < min(b, hi)]
+            blocks.append([first, last + tail, set(repos), list(prompts)])
+    out = []
+    for a, b, repos, prompts in blocks:
+        start, end = max(a, lo), min(b, hi)
+        if start < end:
+            out.append({"start": start, "end": end, "repos": repos, "prompts": [p for p in prompts if start <= p < end]})
+    return out
 
 
 def minutes_inside(start, end, spans):
@@ -249,14 +261,18 @@ def entries(bp, now=None):
         minutes = max(0, int((e_end - begin).total_seconds() // 60))
         out.append(entry(bp, e_start, e_end, minutes, upcoming, begin > e_start, rule=rule, title=e.summary,
                          description=describe(e.summary, pattern), event_id=e.pk, recurring=bool(e.recurrence)))
-    for a_start, a_end, repos in agent_blocks(bp, lo, hi):
-        minutes = int((a_end - a_start).total_seconds() // 60) - minutes_inside(a_start, a_end, claimed)
-        if hours_for(minutes, bp.increment_minutes) == 0:  # too short to bill, or all on the calendar already
-            continue
-        named = ", ".join(sorted(r for r in repos if r))
-        out.append(entry(bp, a_start, a_end, minutes, a_end > now, minutes < (a_end - a_start).total_seconds() // 60,
+    for blk in agent_blocks(bp, lo, hi):
+        a_start, a_end, prompts = blk["start"], blk["end"], blk["prompts"]
+        gross = int((a_end - a_start).total_seconds() // 60)
+        on_calendar = minutes_inside(a_start, a_end, claimed)
+        named = ", ".join(sorted(r for r in blk["repos"] if r))
+        calc = {"prompts": len(prompts), "first": timezone.localtime(min(prompts)) if prompts else None,
+                "last": timezone.localtime(max(prompts)) if prompts else None, "tail": bp.agent_tail_minutes,
+                "gross": gross, "calendar": on_calendar, "net": gross - on_calendar, "increment": bp.increment_minutes}
+        out.append(entry(bp, a_start, a_end, gross - on_calendar, a_end > now, on_calendar > 0,
                          rule="agent: prompts you typed", title="Agent session (active)",
-                         description=f"Development work ({named})" if named else "Development work", agent=True))
+                         description=f"Development work ({named})" if named else "Development work", agent=True,
+                         calc=calc, repos=sorted(r for r in blk["repos"] if r)))
     out.sort(key=lambda r: (r["start"], r["end"]))
     running = ZERO
     for r in out:  # the cap runs over finished time in date order, calendar and agent together
@@ -267,15 +283,50 @@ def entries(bp, now=None):
 
 
 def entry(bp, start, end, minutes, upcoming, overlap, *, rule, title, description, event_id=None, recurring=False,
-          agent=False):
+          agent=False, calc=None, repos=()):
     hours = hours_for(minutes, bp.increment_minutes)
     local = timezone.localtime(start)
     return {
         "event_id": event_id, "day": local.date(), "month": f"{local:%Y-%m}",
         "start": local, "end": timezone.localtime(end), "title": title, "description": description,
         "rule": rule, "hours": hours, "amount": hours * bp.rate_usd, "overlap": overlap, "over_cap": False,
-        "recurring": recurring, "upcoming": upcoming, "agent": agent,
+        "recurring": recurring, "upcoming": upcoming, "agent": agent, "calc": calc, "repos": list(repos),
     }
+
+
+def notes_for(bp):
+    """{date: text} of the descriptions I wrote for each day's development work."""
+    return {n.day: n.text for n in bp.notes.all()}
+
+
+def lines(bp, rows, notes=None):
+    """`rows` as billed lines: each calendar entry alone, agent stretches rolled up into one line per day
+    (finished and upcoming ones apart) with the stretches kept as `parts`. A day with no billable time is left out."""
+    notes = notes_for(bp) if notes is None else notes
+    out, days = [], {}
+    for r in rows:
+        if not r["agent"]:
+            out.append({**r, "parts": [], "note": "", "key": ""})
+            continue
+        key = (r["day"], r["upcoming"])
+        if key not in days:
+            days[key] = {**r, "parts": [], "key": f"{bp.slug}-{r['day']:%Y-%m-%d}"}
+            out.append(days[key])
+        days[key]["parts"].append(r)
+    for line in days.values():
+        parts = line["parts"]
+        line["hours"] = sum((p["hours"] for p in parts), ZERO)
+        line["amount"] = line["hours"] * bp.rate_usd
+        line["start"], line["end"] = min(p["start"] for p in parts), max(p["end"] for p in parts)
+        line["overlap"] = any(p["overlap"] for p in parts)
+        line["over_cap"] = any(p["over_cap"] for p in parts)
+        line["repos"] = sorted({repo for p in parts for repo in p["repos"]})
+        line["note"] = notes.get(line["day"], "")
+        line["description"] = line["note"] or (
+            f"Development work ({', '.join(line['repos'])})" if line["repos"] else "Development work")
+        line["rule"] = f"agent: {len(parts)} stretch{'es' if len(parts) != 1 else ''}"
+    out = [ln for ln in out if not ln["agent"] or ln["hours"]]
+    return sorted(out, key=lambda r: (r["start"], r["end"]))
 
 
 def month_rows(bp, rows):
@@ -299,11 +350,13 @@ def month_rows(bp, rows):
 
 def summary(bp, now=None):
     rows = entries(bp, now)
+    shown = lines(bp, rows)
     done = [r for r in rows if not r["upcoming"]]
     hours = sum((r["hours"] for r in done), ZERO)
     cap = bp.hours_cap
     return {
-        "bp": bp, "rows": rows, "months": month_rows(bp, done), "hours": hours,
+        "bp": bp, "rows": rows, "lines": shown, "months": month_rows(bp, [r for r in shown if not r["upcoming"]]),
+        "hours": hours,
         "agent_hours": sum((r["hours"] for r in done if r["agent"]), ZERO),
         "scheduled": sum((r["hours"] for r in rows if r["upcoming"]), ZERO), "amount": hours * bp.rate_usd,
         "hours_cap": cap, "remaining": None if cap is None else cap - hours,
@@ -320,14 +373,14 @@ def invoice(bp, month, now=None):
         label = datetime.strptime(month, "%Y-%m").strftime("%B %Y")
     except ValueError:
         return None
-    rows = [r for r in entries(bp, now) if r["month"] == month and not r["upcoming"]]
+    rows = [r for r in lines(bp, entries(bp, now)) if r["month"] == month and not r["upcoming"]]
     hours = sum((r["hours"] for r in rows), ZERO)
     sched = bp.invoice_schedule.get(month, {})
     amount = hours * bp.rate_usd
     cap = Decimal(str(sched["cap"])) if "cap" in sched else None
     return {"bp": bp, "month": month, "label": label, "rows": rows, "hours": hours, "amount": amount,
             "due": sched.get("due"), "cap": cap, "over_cap": cap is not None and amount > cap,
-            "issued": timezone.localdate()}
+            "issued": timezone.localdate(), "undescribed": [r["day"] for r in rows if r["agent"] and not r["note"]]}
 
 
 def active_projects():

@@ -408,6 +408,9 @@ always-on host, replacing studio, is open.
   runs to the last prompt plus 5 minutes; agents working without me never
   bill, and the calendar wins any overlap. The loader stores only the typed
   prompt times (for those sessions), never their text.
+- Agent time is shown and invoiced as one line per day, described by a note
+  I write by hand (`core.BillingNote`); opening the day shows every stretch
+  and its arithmetic. Meetings stay one line each.
 
 [agentsview]: https://github.com/agentsview
 [luc]: ../../llm-use-charts

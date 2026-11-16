@@ -2,8 +2,13 @@
 answers. Pages render HTML; chart data comes from JSON endpoints the page
 fetches and draws with plotly."""
 
+import threading
+
 from django.http import Http404, JsonResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
+from django.views.decorators.http import require_POST
 
 from catalog import health as hl
 from catalog import home as home_tabs
@@ -12,7 +17,8 @@ from catalog import projects as pj
 from catalog import subscriptions as subs
 from catalog import workouts as wk
 from core import freshness
-from core.models import BillingProject, Project
+from core.loaders import registry, run_loader
+from core.models import BillingProject, LoaderRun, Project
 from sources.health.models import Workout
 
 latest_loader_runs = home_tabs.latest_runs
@@ -123,9 +129,41 @@ def workouts_data(request):
     return JsonResponse({"chart": wk.chart(f), **wk.routes(f)})
 
 
+RESCAN = {"gcal": "Calendar", "agentsview": "Agent sessions"}  # the loaders invoicing reads from
+_rescanning = threading.Lock()
+
+
+def last_scans():
+    """(label, when) of each rescan source's latest finished, successful load."""
+    out = []
+    for name, label in RESCAN.items():
+        run = LoaderRun.objects.filter(loader=name, ok=True, finished__isnull=False).order_by("-finished").first()
+        out.append({"label": label, "when": run.finished if run else None})
+    return out
+
+
+@ensure_csrf_cookie
 def invoicing(request):
-    return render(request, "catalog/invoicing.html",
-                  {"section": "invoicing", "projects": [inv.summary(bp) for bp in inv.active_projects()]})
+    status = request.GET.get("rescan")
+    failed = [RESCAN[n] for n in request.GET.get("failed", "").split(",") if n in RESCAN]
+    return render(request, "catalog/invoicing.html", {
+        "section": "invoicing", "projects": [inv.summary(bp) for bp in inv.active_projects()],
+        "scans": last_scans(), "rescan": status if status in ("ok", "busy", "failed") else None, "failed": failed})
+
+
+@require_POST
+@csrf_protect
+def rescan(request):
+    """Reload the calendar and the agent sessions now instead of waiting for the hourly load."""
+    if not _rescanning.acquire(blocking=False):  # a rescan is already running in this worker
+        return redirect(f"{reverse('catalog:invoicing')}?rescan=busy")
+    try:
+        loaders = registry()
+        failed = [name for name in RESCAN if not run_loader(loaders[name]).ok]
+    finally:
+        _rescanning.release()
+    query = f"rescan=failed&failed={','.join(failed)}" if failed else "rescan=ok"
+    return redirect(f"{reverse('catalog:invoicing')}?{query}")
 
 
 def invoice(request, slug, month):

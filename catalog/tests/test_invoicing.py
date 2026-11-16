@@ -385,3 +385,77 @@ def test_dfo_seed_uses_agent_activity():
     dfo = BillingProject.objects.get(slug="dfo")
     assert dfo.use_agent_activity and dfo.agent_dirs()[0].endswith("/src/dfo")
     assert (dfo.agent_gap_minutes, dfo.agent_tail_minutes) == (15, 5)
+
+
+# --- rescan ---------------------------------------------------------------------------------------------------------
+
+@pytest.fixture
+def loaders(monkeypatch):
+    """Stand-ins for the gcal and agentsview loaders; records which ran and in what mode."""
+    from catalog import views
+    from core.models import LoaderRun
+    ran, fail = [], set()
+
+    class Fake:
+        def __init__(self, name):
+            self.name = name
+
+    def run(loader, full=False):
+        ran.append((loader.name, full))
+        return LoaderRun(loader=loader.name, ok=loader.name not in fail)
+
+    monkeypatch.setattr(views, "registry", lambda: {n: Fake(n) for n in ("gcal", "agentsview")})
+    monkeypatch.setattr(views, "run_loader", run)
+    return ran, fail
+
+
+def test_rescan_reloads_calendar_and_agent_sessions(abp, client, loaders):
+    ran, _ = loaders
+    resp = client.post(reverse("catalog:rescan"))
+    assert ran == [("gcal", False), ("agentsview", False)]
+    assert resp.status_code == 302 and resp.url == reverse("catalog:invoicing") + "?rescan=ok"
+    assert "Rescanned" in client.get(resp.url).content.decode()
+
+
+def test_rescan_says_which_source_failed(abp, client, loaders):
+    ran, fail = loaders
+    fail.add("agentsview")
+    resp = client.post(reverse("catalog:rescan"))
+    assert ran == [("gcal", False), ("agentsview", False)]  # one failing doesn't skip the other
+    page = client.get(resp.url).content.decode()
+    assert "Rescan failed for Agent sessions" in page and "Rescanned" not in page
+
+
+def test_rescan_is_post_only_and_csrf_protected(abp, loaders):
+    from django.test import Client
+    ran, _ = loaders
+    strict = Client(enforce_csrf_checks=True)
+    assert strict.get(reverse("catalog:rescan")).status_code == 405
+    assert strict.post(reverse("catalog:rescan")).status_code == 403 and ran == []
+    page = strict.get(reverse("catalog:invoicing"))  # the page hands out the token its form carries
+    token = page.cookies["csrftoken"].value
+    assert 'name="csrfmiddlewaretoken"' in page.content.decode()
+    assert strict.post(reverse("catalog:rescan"), {"csrfmiddlewaretoken": token}).status_code == 302
+    assert len(ran) == 2
+
+
+def test_a_second_rescan_while_one_runs_is_refused(abp, client, loaders):
+    from catalog import views
+    ran, _ = loaders
+    views._rescanning.acquire()
+    try:
+        resp = client.post(reverse("catalog:rescan"))
+    finally:
+        views._rescanning.release()
+    assert ran == [] and resp.url.endswith("?rescan=busy")
+    assert "already running" in client.get(resp.url).content.decode()
+
+
+def test_page_shows_when_each_source_last_loaded(abp, client):
+    from core.models import LoaderRun
+    now = timezone.now()
+    LoaderRun.objects.create(loader="gcal", ok=True, started=now, finished=now)
+    page = client.get(reverse("catalog:invoicing")).content.decode()
+    assert "Calendar loaded" in page and "Agent sessions never loaded" in page
+    assert ">Rescan<" in page
+    assert "bogus" not in client.get(reverse("catalog:invoicing") + "?rescan=failed&failed=bogus").content.decode()

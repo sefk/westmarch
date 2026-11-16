@@ -12,6 +12,10 @@
 .bar.warn span { background: var(--status-warn); }
 .bar.over span { background: var(--status-critical); }
 a { color: var(--series-1); }
+.rescan { display: flex; align-items: center; gap: 0.75rem; margin: 0 0 0.75rem; flex-wrap: wrap; }
+.rescan button { font: inherit; padding: 0.3rem 0.9rem; border: 1px solid var(--border); border-radius: 6px; background: var(--page); color: var(--ink); cursor: pointer; }
+.rescan button:hover { border-color: var(--series-1); }
+.ok-text { color: var(--status-good); font-weight: 600; }
 .warn-text { color: var(--status-warn); font-weight: 600; }
 .scroll { overflow-x: auto; }
 table.data td.text, table.data th.text { text-align: left; white-space: normal; }
@@ -26,6 +30,15 @@ h2 + .sub { font-size: 0.8rem; color: var(--muted); margin: 0.15rem 0 0.5rem; }
 
 {% block content %}
 <h1>Invoicing</h1>
+<form method="post" action="{% url 'catalog:rescan' %}" class="rescan">{% csrf_token %}
+  <button type="submit">Rescan</button>
+  <span class="muted small">Reload the calendar and agent sessions now.
+    {% for s in scans %}{{ s.label }} {% if s.when %}loaded {{ s.when|timesince }} ago{% else %}never loaded{% endif %}{% if not forloop.last %}; {% endif %}{% endfor %}</span>
+</form>
+{% if rescan == "ok" %}<p class="small ok-text">Rescanned: the numbers below are current.</p>
+{% elif rescan == "busy" %}<p class="small warn-text">A rescan is already running; reload in a few seconds.</p>
+{% elif rescan == "failed" %}<p class="small bad">Rescan failed for {{ failed|join:", "|default:"a source" }}; the numbers below may be stale. See the loader status on the home page.</p>{% endif %}
+
 <p class="muted small">What hours can I bill, and where am I against the contract? Time comes from the primary
 calendar (titles with the project's tag, or guests at its domains), plus, where a project opts in, the time you
 spent typing prompts to AI agents.</p>

@@ -102,3 +102,25 @@ def test_missing_binary_is_disabled(monkeypatch):
     monkeypatch.setattr(mod, "FALLBACK_BIN", "/nonexistent/agentsview")
     run = run_loader(mod.AgentsviewLoader())
     assert run.ok and run.message.startswith("disabled")
+
+
+def test_run_cli_needs_resync_says_how_to_fix(monkeypatch):
+    err = '{"message":"opening read-only database: archive data needs resync"}'
+    monkeypatch.setattr(mod, "find_binary", lambda: "agentsview")
+    monkeypatch.setattr(
+        mod.subprocess, "run",
+        lambda *a, **k: mod.subprocess.CompletedProcess(a, 1, stdout="", stderr=err))
+    with pytest.raises(RuntimeError) as exc:
+        mod.run_cli(["export", "sessions"])
+    text = str(exc.value)
+    assert text.startswith("agentsview archive needs upgrading: run `agentsview daemon restart`")
+    assert "needs resync" in text
+
+
+def test_run_cli_other_failures_unchanged(monkeypatch):
+    monkeypatch.setattr(mod, "find_binary", lambda: "agentsview")
+    monkeypatch.setattr(
+        mod.subprocess, "run",
+        lambda *a, **k: mod.subprocess.CompletedProcess(a, 2, stdout="", stderr="boom"))
+    with pytest.raises(RuntimeError, match=r"^agentsview export sessions exit 2: boom"):
+        mod.run_cli(["export", "sessions"])

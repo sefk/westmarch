@@ -57,7 +57,10 @@ def run_cli(args: list[str]) -> dict:
     """Run `agentsview <args>` and parse its JSON stdout. Tests replace this."""
     proc = subprocess.run([find_binary(), *args], capture_output=True, text=True, timeout=300)
     if proc.returncode:
-        raise RuntimeError(f"agentsview {' '.join(args[:2])} exit {proc.returncode}: {proc.stderr[-500:]}")
+        msg = f"agentsview {' '.join(args[:2])} exit {proc.returncode}: {proc.stderr[-500:]}"
+        if "needs resync" in proc.stderr:  # new agentsview version; only a writable daemon can upgrade the archive
+            msg = f"agentsview archive needs upgrading: run `agentsview daemon restart`. {msg}"
+        raise RuntimeError(msg)
     return json.loads(proc.stdout)
 
 

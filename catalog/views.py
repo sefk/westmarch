@@ -2,7 +2,9 @@
 answers. Pages render HTML; chart data comes from JSON endpoints the page
 fetches and draws with plotly."""
 
-import threading
+import fcntl
+import tempfile
+from pathlib import Path
 
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -130,14 +132,20 @@ def workouts_data(request):
 
 
 RESCAN = {"gcal": "Calendar", "agentsview": "Agent sessions"}  # the loaders invoicing reads from
-_rescanning = threading.Lock()
+RESCAN_LOCK = Path(tempfile.gettempdir()) / "westmarch-rescan.lock"  # flock: shared by every gunicorn worker
+
+
+def skipped(run):
+    """run_loader records a loader with no credentials or binary as ok, having loaded nothing."""
+    return run.message.startswith("disabled")
 
 
 def last_scans():
     """(label, when) of each rescan source's latest finished, successful load."""
     out = []
     for name, label in RESCAN.items():
-        run = LoaderRun.objects.filter(loader=name, ok=True, finished__isnull=False).order_by("-finished").first()
+        run = (LoaderRun.objects.filter(loader=name, ok=True, finished__isnull=False)
+               .exclude(message__startswith="disabled").order_by("-finished").first())
         out.append({"label": label, "when": run.finished if run else None})
     return out
 
@@ -155,13 +163,14 @@ def invoicing(request):
 @csrf_protect
 def rescan(request):
     """Reload the calendar and the agent sessions now instead of waiting for the hourly load."""
-    if not _rescanning.acquire(blocking=False):  # a rescan is already running in this worker
-        return redirect(f"{reverse('catalog:invoicing')}?rescan=busy")
-    try:
+    with open(RESCAN_LOCK, "a") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:  # another rescan, in this worker or another, holds it
+            return redirect(f"{reverse('catalog:invoicing')}?rescan=busy")
         loaders = registry()
-        failed = [name for name in RESCAN if not run_loader(loaders[name]).ok]
-    finally:
-        _rescanning.release()
+        runs = {name: run_loader(loaders[name]) for name in RESCAN}
+    failed = [name for name, run in runs.items() if not run.ok or skipped(run)]
     query = f"rescan=failed&failed={','.join(failed)}" if failed else "rescan=ok"
     return redirect(f"{reverse('catalog:invoicing')}?{query}")
 

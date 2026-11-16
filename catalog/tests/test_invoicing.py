@@ -394,7 +394,7 @@ def loaders(monkeypatch):
     """Stand-ins for the gcal and agentsview loaders; records which ran and in what mode."""
     from catalog import views
     from core.models import LoaderRun
-    ran, fail = [], set()
+    ran, fail, off = [], set(), set()
 
     class Fake:
         def __init__(self, name):
@@ -402,15 +402,17 @@ def loaders(monkeypatch):
 
     def run(loader, full=False):
         ran.append((loader.name, full))
-        return LoaderRun(loader=loader.name, ok=loader.name not in fail)
+        return LoaderRun(loader=loader.name, ok=loader.name not in fail and loader.name not in off,
+                         message="disabled: no credentials" if loader.name in off else "")
 
     monkeypatch.setattr(views, "registry", lambda: {n: Fake(n) for n in ("gcal", "agentsview")})
     monkeypatch.setattr(views, "run_loader", run)
-    return ran, fail
+    from types import SimpleNamespace
+    return SimpleNamespace(ran=ran, fail=fail, off=off)
 
 
 def test_rescan_reloads_calendar_and_agent_sessions(abp, client, loaders):
-    ran, _ = loaders
+    ran = loaders.ran
     resp = client.post(reverse("catalog:rescan"))
     assert ran == [("gcal", False), ("agentsview", False)]
     assert resp.status_code == 302 and resp.url == reverse("catalog:invoicing") + "?rescan=ok"
@@ -418,8 +420,8 @@ def test_rescan_reloads_calendar_and_agent_sessions(abp, client, loaders):
 
 
 def test_rescan_says_which_source_failed(abp, client, loaders):
-    ran, fail = loaders
-    fail.add("agentsview")
+    ran = loaders.ran
+    loaders.fail.add("agentsview")
     resp = client.post(reverse("catalog:rescan"))
     assert ran == [("gcal", False), ("agentsview", False)]  # one failing doesn't skip the other
     page = client.get(resp.url).content.decode()
@@ -428,7 +430,7 @@ def test_rescan_says_which_source_failed(abp, client, loaders):
 
 def test_rescan_is_post_only_and_csrf_protected(abp, loaders):
     from django.test import Client
-    ran, _ = loaders
+    ran = loaders.ran
     strict = Client(enforce_csrf_checks=True)
     assert strict.get(reverse("catalog:rescan")).status_code == 405
     assert strict.post(reverse("catalog:rescan")).status_code == 403 and ran == []
@@ -440,15 +442,25 @@ def test_rescan_is_post_only_and_csrf_protected(abp, loaders):
 
 
 def test_a_second_rescan_while_one_runs_is_refused(abp, client, loaders):
+    import fcntl
     from catalog import views
-    ran, _ = loaders
-    views._rescanning.acquire()
-    try:
+    with open(views.RESCAN_LOCK, "a") as other:  # another worker mid-rescan
+        fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
         resp = client.post(reverse("catalog:rescan"))
-    finally:
-        views._rescanning.release()
-    assert ran == [] and resp.url.endswith("?rescan=busy")
+    assert loaders.ran == [] and resp.url.endswith("?rescan=busy")
     assert "already running" in client.get(resp.url).content.decode()
+    client.post(reverse("catalog:rescan"))  # the lock is free again
+    assert len(loaders.ran) == 2
+
+
+def test_a_disabled_loader_is_not_a_refresh(abp, client, loaders):
+    loaders.off.add("gcal")  # no Google credentials: loads nothing but records ok
+    page = client.get(client.post(reverse("catalog:rescan")).url).content.decode()
+    assert "Rescan failed for Calendar" in page and "Rescanned" not in page
+    from core.models import LoaderRun
+    now = timezone.now()
+    LoaderRun.objects.create(loader="gcal", ok=True, message="disabled: no credentials", started=now, finished=now)
+    assert "Calendar never loaded" in client.get(reverse("catalog:invoicing")).content.decode()
 
 
 def test_page_shows_when_each_source_last_loaded(abp, client):

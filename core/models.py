@@ -4,6 +4,8 @@ Raw per-source tables live in their own apps under `sources/`. Nothing in
 core knows about any particular source.
 """
 
+import os
+
 from django.db import models
 
 
@@ -108,6 +110,12 @@ class BillingProject(models.Model):
     or it has an attendee at one of `attendee_domains`. `invoice_schedule`
     is {"YYYY-MM": {"cap": dollars, "due": "YYYY-MM-DD"}} from the contract.
     The catalog invoicing page does the matching; this is just the terms.
+
+    With `use_agent_activity`, prompts you typed to an AI agent in a session
+    under one of `agent_paths` also count as work (the hours you forgot to put
+    on the calendar). Prompts less than `agent_gap_minutes` apart make one
+    block, which runs to the last prompt plus `agent_tail_minutes`; time the
+    agents work on their own, outside a block, never bills.
     """
 
     slug = models.SlugField(unique=True)
@@ -121,6 +129,10 @@ class BillingProject(models.Model):
     term_start = models.DateField()
     term_end = models.DateField()
     increment_minutes = models.PositiveSmallIntegerField(default=15)  # each entry rounds to nearest
+    use_agent_activity = models.BooleanField(default=False)
+    agent_paths = models.JSONField(default=list)  # directories whose agent sessions count, ~ allowed
+    agent_gap_minutes = models.PositiveSmallIntegerField(default=15)
+    agent_tail_minutes = models.PositiveSmallIntegerField(default=5)
     invoice_schedule = models.JSONField(default=dict)
     bill_from = models.TextField(blank=True)
     bill_to = models.TextField(blank=True)
@@ -131,3 +143,7 @@ class BillingProject(models.Model):
 
     def __str__(self):
         return self.slug
+
+    def agent_dirs(self):
+        """`agent_paths` as absolute paths without trailing slashes."""
+        return [os.path.expanduser(p).rstrip("/") for p in self.agent_paths if p.strip("/ ")]

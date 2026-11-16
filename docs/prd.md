@@ -402,6 +402,12 @@ always-on host, replacing studio, is open.
   guest is at the client's domains; terms (rate, caps, term, invoice
   schedule) live in `core.BillingProject`, seeded with the DFO contract
   with Ode, PB LLC. Entries are computed per request, not stored.
+- Agent activity is a second billable input: the prompts I type to an AI
+  agent in a session under the project's `agent_paths` count as work I forgot
+  to calendar. Prompts within 15 minutes of each other make a block that
+  runs to the last prompt plus 5 minutes; agents working without me never
+  bill, and the calendar wins any overlap. The loader stores only the typed
+  prompt times (for those sessions), never their text.
 
 [agentsview]: https://github.com/agentsview
 [luc]: ../../llm-use-charts

@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from datetime import timezone as dt_timezone
 from decimal import Decimal
 
 import pytest
@@ -7,6 +8,7 @@ from django.utils import timezone
 
 from catalog import invoicing as inv
 from core.models import BillingProject
+from sources.agentsview.models import Session
 from sources.google.models import GCalCalendar, GCalEvent
 
 pytestmark = pytest.mark.django_db
@@ -238,3 +240,128 @@ def test_recurring_occurrence_straddling_the_term_start(bp, cal):
     m.save()
     rows = inv.entries(bp, NOW)
     assert rows[0]["day"].strftime("%m-%d") == "11-09" and rows[0]["hours"] == 1
+
+
+# --- agent activity -------------------------------------------------------------------------------------------------
+
+_s = 0
+
+
+def agent_session(day, times, cwd="/agent/dfo", **kw):
+    """A session whose person-typed prompts landed at Pacific `times` ("HH:MM") on `day`."""
+    global _s
+    _s += 1
+    iso = [at(day, t).astimezone(dt_timezone.utc).isoformat() for t in times]
+    return Session.objects.create(session_id=f"s{_s}", agent="claude", cwd=cwd, typed_prompts=iso,
+                                  last_activity_at=at(day, times[-1]) if times else None, **kw)
+
+
+@pytest.fixture
+def abp(bp):
+    bp.use_agent_activity, bp.agent_paths = True, ["/agent/dfo"]
+    bp.hours_cap = None
+    bp.save()
+    return bp
+
+
+def test_prompts_within_the_gap_make_one_block_with_a_tail(abp):
+    agent_session("11-16", ["07:52", "07:53", "08:03"])  # last prompt + 5 min tail = 7:52-8:08, 16 min
+    [row] = inv.entries(abp, NOW)
+    assert row["agent"] and row["rule"] == "agent: prompts you typed" and row["description"] == "Development work"
+    assert (row["start"].strftime("%H:%M"), row["end"].strftime("%H:%M")) == ("07:52", "08:08")
+    assert row["hours"] == Decimal("0.25") and row["amount"] == Decimal(50)
+
+
+def test_a_longer_gap_splits_blocks_and_a_lone_prompt_is_too_short(abp):
+    agent_session("11-16", ["09:00", "09:15", "09:31", "13:00"])  # 9:15 joins 9:00; 9:31 is 16 min on; 13:00 is alone
+    rows = inv.entries(abp, NOW)
+    assert [(r["start"].strftime("%H:%M"), r["end"].strftime("%H:%M")) for r in rows] == [("09:00", "09:20")]
+    assert rows[0]["hours"] == Decimal("0.25")  # 20 min -> nearest quarter hour
+    # the 9:31 prompt (5 min) and the 13:00 prompt (5 min) each round to nothing and don't clutter the list
+
+
+def test_agent_time_is_not_the_session_span(abp):
+    Session.objects.create(session_id="long", agent="claude", cwd="/agent/dfo", started_at=at("11-11", "20:57"),
+                           ended_at=at("11-12", "09:13"), typed_prompts=[at("11-11", "21:00").astimezone(dt_timezone.utc).isoformat()])
+    assert inv.entries(abp, NOW) == []  # one prompt; twelve hours of agent work bill nothing
+
+
+def test_concurrent_sessions_share_one_block_and_name_their_repos(abp):
+    agent_session("11-16", ["10:00", "10:10"], cwd="/agent/dfo/website")
+    agent_session("11-16", ["10:05", "10:20"], cwd="/agent/dfo/apis")
+    [row] = inv.entries(abp, NOW)
+    assert row["description"] == "Development work (apis, website)"
+    assert (row["start"].strftime("%H:%M"), row["end"].strftime("%H:%M"), row["hours"]) == ("10:00", "10:25", Decimal("0.5"))
+
+
+def test_calendar_wins_over_agent_time(abp, cal):
+    ev(cal, "DFO: planning", "11-16", "10:00", "11:00")
+    agent_session("11-16", ["09:50", "10:05", "10:20", "10:40"])  # block 9:50-10:45; 10:00-10:45 is on the calendar
+    rows = inv.entries(abp, NOW)
+    assert [(r["agent"], r["hours"], r["overlap"]) for r in rows] == [(True, Decimal("0.25"), True), (False, Decimal(1), False)]
+    assert rows[1]["title"] == "DFO: planning"  # the meeting keeps its full hour
+    agent_session("11-17", ["10:00", "10:10"])
+    ev(cal, "DFO: all morning", "11-17", "09:00", "12:00")
+    assert [r["title"] for r in inv.entries(abp, NOW) if r["day"] == date(2026, 11, 17)] == ["DFO: all morning"]
+
+
+def test_only_my_dfo_sessions_count(abp):
+    agent_session("11-16", ["08:00", "08:10"], cwd="/agent/dfo-other")  # sibling path, not under it
+    agent_session("11-16", ["09:00", "09:10"], cwd="/elsewhere")
+    agent_session("11-16", ["10:00", "10:10"], is_automated=True)
+    Session.objects.create(session_id="unread", agent="claude", cwd="/agent/dfo", typed_prompts=None)
+    assert inv.entries(abp, NOW) == []
+    abp.use_agent_activity = False
+    abp.save()
+    agent_session("11-16", ["11:00", "11:10"])
+    assert inv.entries(abp, NOW) == []
+
+
+def test_prompts_outside_the_term_do_not_count(abp):
+    agent_session("11-03", ["09:00", "09:10"])
+    agent_session("12-21", ["09:00", "09:10"])
+    assert inv.entries(abp, NOW) == []
+
+
+def test_an_unfinished_block_does_not_bill_yet(abp):
+    agent_session("11-16", ["10:00", "10:10"])  # runs to 10:15
+    now = at("11-16", "10:12")
+    [row] = inv.entries(abp, now)
+    assert row["upcoming"] and not inv.summary(abp, now)["hours"]
+    assert inv.summary(abp, now)["scheduled"] == Decimal("0.25")
+    assert inv.entries(abp, at("11-16", "10:30"))[0]["upcoming"] is False
+
+
+def test_the_cap_runs_over_calendar_and_agent_time_in_date_order(abp, cal):
+    abp.hours_cap = Decimal("2")
+    abp.save()
+    ev(cal, "DFO: first", "11-16", "09:00", "10:00")
+    agent_session("11-16", ["11:00", "11:14", "11:28", "11:42", "11:56"])  # 11:00-12:01, 1 h
+    ev(cal, "DFO: last", "11-16", "14:00", "15:00")
+    assert [(r["title"], r["over_cap"]) for r in inv.entries(abp, NOW)] == [
+        ("DFO: first", False), ("Agent session (active)", False), ("DFO: last", True)]
+    assert inv.summary(abp, NOW)["agent_hours"] == Decimal(1)
+
+
+def test_pages_show_the_agent_caveat_and_rows(abp, client):
+    agent_session("11-16", ["07:52", "07:53", "08:03"])
+    page = client.get(reverse("catalog:invoicing")).content.decode()
+    assert "Agent time is an estimate" in page and "working on your behalf without you" in page
+    assert 'class="tag">agent' in page and "07:52" not in page.replace("7:52", "")  # shown as g:i, not zero padded
+    page = client.get(reverse("catalog:invoice", args=[abp.slug, "2026-11"])).content.decode()
+    assert "Development work" in page
+
+
+def test_no_caveat_when_agent_activity_is_off(bp, client):
+    assert "Agent time is an estimate" not in client.get(reverse("catalog:invoicing")).content.decode()
+
+
+def test_dfo_seed_uses_agent_activity():
+    BillingProject.objects.all().delete()
+    from importlib import import_module
+    from django.apps import apps
+    import_module("core.migrations.0003_seed_dfo_billing").seed(apps, None)
+    import_module("core.migrations.0005_dfo_agent_activity").enable(apps, None)
+    dfo = BillingProject.objects.get(slug="dfo")
+    assert dfo.use_agent_activity and dfo.agent_dirs()[0].endswith("/src/dfo")
+    assert (dfo.agent_gap_minutes, dfo.agent_tail_minutes) == (15, 5)

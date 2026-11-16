@@ -124,3 +124,102 @@ def test_run_cli_other_failures_unchanged(monkeypatch):
         lambda *a, **k: mod.subprocess.CompletedProcess(a, 2, stdout="", stderr="boom"))
     with pytest.raises(RuntimeError, match=r"^agentsview export sessions exit 2: boom"):
         mod.run_cli(["export", "sessions"])
+
+
+# --- typed prompts (for invoicing) -----------------------------------------------------------------------------------
+
+def msg(ordinal, at, source, role="user"):
+    return {"ordinal": ordinal, "role": role, "timestamp": at, "prompt_source": source}
+
+
+@pytest.fixture
+def prompts(cli, monkeypatch):
+    """Billing on the datatalk checkout; `pages` maps session id -> list of message pages."""
+    from core.models import BillingProject
+    BillingProject.objects.all().delete()
+    BillingProject.objects.create(slug="t", name="T", rate_usd=1, term_start="2026-01-01", term_end="2026-12-31",
+                                  use_agent_activity=True, agent_paths=["/Users/sefk/src/biglocalnews"])
+    pages, sent = {}, []
+    inner = mod.run_cli
+
+    def fake(args):
+        if args[:2] != ["session", "messages"]:
+            return inner(args)
+        sent.append(args)
+        sid, start = args[2], int(args[args.index("--from") + 1])
+        return {"messages": [m for m in pages.get(sid, []) if m["ordinal"] >= start][: mod.PAGE]}
+
+    monkeypatch.setattr(mod, "run_cli", fake)
+    monkeypatch.setattr(mod.time, "sleep", lambda s: None)
+    return pages, sent
+
+
+def test_typed_prompts_are_recorded_for_billing_paths_only(prompts):
+    pages, sent = prompts
+    pages[PARENT] = [msg(0, "2026-11-16T15:51:59Z", None), msg(1, "2026-11-16T15:52:44Z", "typed"),
+                     msg(2, "2026-11-16T15:52:47Z", None), msg(5, "2026-11-16T15:55:00Z", "queued"),
+                     msg(6, "2026-11-16T15:56:00Z", "suggestion_accepted"), msg(7, "2026-11-16T15:57:00Z", "system")]
+    run = run_loader(mod.AgentsviewLoader())
+    assert run.ok, run.message
+    assert Session.objects.get(session_id=PARENT).typed_prompts == [
+        "2026-11-16T15:52:44Z", "2026-11-16T15:55:00Z", "2026-11-16T15:56:00Z"]
+    assert Session.objects.get(agent="pi").typed_prompts is None  # outside every agent path: never read
+    assert {a[2] for a in sent} <= set(Session.objects.filter(cwd__startswith="/Users/sefk/src/biglocalnews")
+                                       .values_list("session_id", flat=True))
+
+
+def test_unread_sessions_are_backfilled_and_read_ones_left_alone(prompts):
+    pages, sent = prompts
+    pages[PARENT] = [msg(0, "2026-11-16T15:52:44Z", "typed")]
+    run_loader(mod.AgentsviewLoader())
+    Session.objects.filter(session_id=PARENT).update(typed_prompts=None)  # as if loaded before this feature
+    sent.clear()
+    mod.AgentsviewLoader().record_prompts([])  # no fresh sessions this run
+    assert [a[2] for a in sent] == [PARENT, PARENT]  # the page, then the empty page that ends it
+    assert Session.objects.get(session_id=PARENT).typed_prompts == ["2026-11-16T15:52:44Z"]
+    sent.clear()
+    mod.AgentsviewLoader().record_prompts([])
+    assert sent == []  # already read and not fresh: untouched
+
+
+def test_prompt_pages_are_followed(prompts):
+    pages, sent = prompts
+    monkey = mod.PAGE
+    mod.PAGE = 2
+    try:
+        pages[PARENT] = [msg(i, f"2026-11-16T15:5{i}:00Z", "typed") for i in range(5)]
+        run_loader(mod.AgentsviewLoader())
+    finally:
+        mod.PAGE = monkey
+    assert len(Session.objects.get(session_id=PARENT).typed_prompts) == 5
+
+
+def test_a_failed_prompt_read_fails_the_run_but_keeps_the_sessions(prompts, monkeypatch):
+    pages, sent = prompts
+    inner = mod.run_cli
+
+    def flaky(args):
+        if args[:2] == ["session", "messages"]:
+            raise RuntimeError("agentsview session messages exit 69: daemon not responding")
+        return inner(args)
+
+    monkeypatch.setattr(mod, "run_cli", flaky)
+    run = run_loader(mod.AgentsviewLoader())
+    assert not run.ok and "couldn't read prompts" in run.message
+    assert Session.objects.count() == 3 and Session.objects.get(session_id=PARENT).typed_prompts is None
+
+
+def test_a_transient_prompt_failure_is_retried(prompts, monkeypatch):
+    pages, sent = prompts
+    pages[PARENT] = [msg(0, "2026-11-16T15:52:44Z", "typed")]
+    inner, tries = mod.run_cli, []
+
+    def once(args):
+        if args[:2] == ["session", "messages"] and not tries:
+            tries.append(1)
+            raise RuntimeError("daemon not responding")
+        return inner(args)
+
+    monkeypatch.setattr(mod, "run_cli", once)
+    assert run_loader(mod.AgentsviewLoader()).ok
+    assert Session.objects.get(session_id=PARENT).typed_prompts == ["2026-11-16T15:52:44Z"]

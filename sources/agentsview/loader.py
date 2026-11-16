@@ -16,6 +16,13 @@ transcript's usage is its own, so total spend is the sum over all rows.
 agentsview's "one-shot" flag isn't exposed; `entrypoint`/`session_kind`
 (e.g. sdk-cli for `claude -p`) are the nearest proxy.
 
+Typed prompts: for sessions whose cwd is under an active billing project's
+`agent_paths`, one `session messages --role user` read per session records
+when a human typed a prompt (`prompt_source` typed, queued or an accepted
+suggestion; hook and tool-result messages are also "user" messages). Invoicing
+uses these to tell my time from agents working alone. Sessions never read yet
+(`typed_prompts` is NULL) are backfilled on the next run.
+
 Incremental: `--active-since` the last successful run, minus a day of
 overlap. Rows are upserted on the agentsview id, so overlap is harmless.
 `full=True` refetches everything. Sessions deleted from agentsview stay.
@@ -26,14 +33,17 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 from datetime import timedelta
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from core.loaders import Disabled, Loader
+from core.models import BillingProject
 
 from .models import ModelUsage, Session
 
@@ -41,7 +51,11 @@ logger = logging.getLogger(__name__)
 OVERLAP = timedelta(days=1)
 INCLUDE = ["--include-one-shot", "--include-automated", "--include-children"]
 FALLBACK_BIN = "/opt/homebrew/bin/agentsview"  # LaunchDaemons have a bare PATH
-SESSION_FIELDS = [f.name for f in Session._meta.concrete_fields if f.name not in ("id", "session_id")]
+HUMAN_PROMPTS = {"typed", "queued", "suggestion_accepted"}  # `prompt_source` values for a person at the keyboard
+PAGE = 500
+RETRIES = 3  # the daemon sometimes answers "not responding" while it syncs
+# typed_prompts is filled by its own step: the session upsert must not reset it
+SESSION_FIELDS = [f.name for f in Session._meta.concrete_fields if f.name not in ("id", "session_id", "typed_prompts")]
 
 
 def find_binary() -> str:
@@ -62,6 +76,25 @@ def run_cli(args: list[str]) -> dict:
             msg = f"agentsview archive needs upgrading: run `agentsview daemon restart`. {msg}"
         raise RuntimeError(msg)
     return json.loads(proc.stdout)
+
+
+def fetch_prompts(session_id: str) -> list[str]:
+    """Sorted ISO times of the prompts a person typed in one session."""
+    times, start = set(), 0
+    while True:
+        for attempt in range(RETRIES):
+            try:
+                page = run_cli(["session", "messages", session_id, "--role", "user",
+                                "--from", str(start), "--limit", str(PAGE), "--json"])["messages"]
+                break
+            except RuntimeError:
+                if attempt == RETRIES - 1:
+                    raise
+                time.sleep(2)
+        if not page:
+            return sorted(times)
+        times.update(m["timestamp"] for m in page if m.get("prompt_source") in HUMAN_PROMPTS and m.get("timestamp"))
+        start = page[-1]["ordinal"] + 1
 
 
 def dt(value):
@@ -142,10 +175,33 @@ class AgentsviewLoader(Loader):
         exported = run_cli(["export", "sessions", "--all", "--format", "json", *INCLUDE, *filt])["sessions"]
         listed = {s["id"]: s for s in self.list_sessions(filt)}
         rows = self.save([to_session(e, listed.get(e["id"], {})) for e in exported])
+        self.record_prompts([e["id"] for e in exported])
 
         self.state_set("active_since", started.isoformat())
         logger.info("agentsview: %d sessions (%s)", len(exported), f"since {since}" if since else "full")
         return rows
+
+    def record_prompts(self, fresh_ids: list[str]) -> None:
+        """Read typed-prompt times for this run's sessions (and any never read) under billing paths."""
+        dirs = [d for bp in BillingProject.objects.filter(active=True, use_agent_activity=True) for d in bp.agent_dirs()]
+        if not dirs:
+            return
+        under = Q()
+        for d in dirs:
+            under |= Q(cwd=d) | Q(cwd__startswith=d + "/")
+        wanted = (Session.objects.filter(under, user_message_count__gt=0)
+                  .filter(Q(session_id__in=fresh_ids) | Q(typed_prompts__isnull=True)))
+        failed = []
+        for s in wanted:
+            try:
+                s.typed_prompts = fetch_prompts(s.session_id)
+            except (RuntimeError, ValueError, KeyError) as exc:
+                logger.warning("agentsview: typed prompts for %s: %s", s.session_id, exc)
+                failed.append(s.session_id)
+                continue
+            s.save(update_fields=["typed_prompts"])
+        if failed:  # sessions are saved; the next run retries these
+            raise RuntimeError(f"agentsview: couldn't read prompts for {len(failed)} session(s): {', '.join(failed[:3])}")
 
     def list_sessions(self, filt: list[str]):
         cursor = None

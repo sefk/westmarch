@@ -6,6 +6,14 @@ core.BillingProject an event is billable when
 - its title contains one of the project's tags as a whole word ("DFO"), or
 - someone other than me on the guest list is at one of its attendee domains.
 
+Agent activity is a second input. When the project has `use_agent_activity`,
+the prompts I typed to an AI agent in a session under its `agent_paths` mark
+time I was at work even if I never put a block on the calendar. Prompts less
+than `agent_gap_minutes` apart make one block, which runs from the first prompt
+to the last plus `agent_tail_minutes` (reading the answer). Time agents work
+alone, before the first prompt or after the tail, never bills. A calendar
+entry always wins: the part of an agent block inside one is dropped.
+
 Recurring meetings are expanded: the mirror keeps one master per series
 (with its RRULE/EXDATE/RDATE), so its occurrences inside the term are
 generated here, less any occurrence replaced or cancelled by an exception
@@ -27,9 +35,11 @@ from decimal import ROUND_HALF_UP, Decimal
 from zoneinfo import ZoneInfo
 
 from dateutil.rrule import rrulestr
+from django.db.models import Q
 from django.utils import timezone
 
 from core.models import BillingProject
+from sources.agentsview.models import Session
 from sources.google.models import GCalEvent
 
 logger = logging.getLogger(__name__)
@@ -155,13 +165,60 @@ def candidates(bp, lo, hi):
     return sorted(out, key=lambda c: (c[1], c[2]))
 
 
+def typed_prompts(bp, lo, hi):
+    """(instant, repo) for each prompt I typed to an agent inside [lo, hi), time-ordered.
+    `repo` is the first directory under the agent path ("" for the path itself)."""
+    dirs = bp.agent_dirs()
+    if not (bp.use_agent_activity and dirs):
+        return []
+    under = Q()
+    for d in dirs:
+        under |= Q(cwd=d) | Q(cwd__startswith=d + "/")
+    out = set()
+    for cwd, times in (Session.objects.filter(under, is_automated=False, typed_prompts__isnull=False)
+                       .filter(Q(last_activity_at__gte=lo) | Q(last_activity_at__isnull=True))
+                       .values_list("cwd", "typed_prompts")):
+        base = next(d for d in dirs if cwd == d or cwd.startswith(d + "/"))
+        repo = cwd[len(base):].strip("/").partition("/")[0]
+        for t in times:
+            when = as_utc(t, dt_timezone.utc)
+            if when and lo <= when < hi:
+                out.add((when, repo))
+    return sorted(out)
+
+
+def agent_blocks(bp, lo, hi):
+    """(start, end, repos) work blocks from typed prompts; concurrent sessions share a block."""
+    gap, tail = timedelta(minutes=bp.agent_gap_minutes), timedelta(minutes=bp.agent_tail_minutes)
+    blocks = []  # [first, last, repos]
+    for when, repo in typed_prompts(bp, lo, hi):
+        if blocks and when - blocks[-1][1] <= gap:
+            blocks[-1][1] = when
+            blocks[-1][2].add(repo)
+        else:
+            blocks.append([when, when, {repo}])
+    return [(a, min(b + tail, hi), repos) for a, b, repos in blocks]
+
+
+def minutes_inside(start, end, spans):
+    """Whole minutes of [start, end) that fall within the union of `spans`."""
+    total, edge = timedelta(), start
+    for a, b in sorted(spans):
+        a, b = max(a, edge), min(b, end)
+        if b > a:
+            total += b - a
+            edge = b
+    return int(total.total_seconds() // 60)
+
+
 def entries(bp, now=None):
     """Entries in date order, each a dict; hours is 0 where an overlap ate the event.
     `upcoming` marks those that haven't ended yet: they don't bill and don't count toward the cap."""
     now = now or timezone.now()
     lo, hi = term_bounds(bp)
     pattern = tag_pattern(bp.tags)
-    out, covered, running = [], {False: None, True: None}, ZERO  # covered: end of claimed time, by upcoming?
+    out, covered = [], {False: None, True: None}  # covered: end of claimed time, by upcoming?
+    claimed = []  # every calendar entry's span: agent time inside it is already accounted for
     for e, e_start, e_end in candidates(bp, lo, hi):
         e_start, e_end = max(e_start, lo), min(e_end, hi)  # only the part inside the term bills
         if declined(e):
@@ -180,20 +237,37 @@ def entries(bp, now=None):
         seen = [c for k, c in covered.items() if c and (upcoming or not k)]
         begin = max(e_start, *seen) if seen else e_start
         covered[upcoming] = max(e_end, covered[upcoming]) if covered[upcoming] else e_end
+        claimed.append((e_start, e_end))
         minutes = max(0, int((e_end - begin).total_seconds() // 60))
-        hours = hours_for(minutes, bp.increment_minutes)
-        if not upcoming:
-            running += hours
-        local = timezone.localtime(e_start)
-        out.append({
-            "event_id": e.pk, "day": local.date(), "month": f"{local:%Y-%m}",
-            "start": local, "end": timezone.localtime(e_end), "title": e.summary,
-            "description": describe(e.summary, pattern), "rule": rule, "hours": hours,
-            "amount": hours * bp.rate_usd, "overlap": begin > e_start,
-            "over_cap": not upcoming and bp.hours_cap is not None and running > bp.hours_cap,
-            "recurring": bool(e.recurrence), "upcoming": upcoming,
-        })
+        out.append(entry(bp, e_start, e_end, minutes, upcoming, begin > e_start, rule=rule, title=e.summary,
+                         description=describe(e.summary, pattern), event_id=e.pk, recurring=bool(e.recurrence)))
+    for a_start, a_end, repos in agent_blocks(bp, lo, hi):
+        minutes = int((a_end - a_start).total_seconds() // 60) - minutes_inside(a_start, a_end, claimed)
+        if hours_for(minutes, bp.increment_minutes) == 0:  # too short to bill, or all on the calendar already
+            continue
+        named = ", ".join(sorted(r for r in repos if r))
+        out.append(entry(bp, a_start, a_end, minutes, a_end > now, minutes < (a_end - a_start).total_seconds() // 60,
+                         rule="agent: prompts you typed", title="Agent session (active)",
+                         description=f"Development work ({named})" if named else "Development work", agent=True))
+    out.sort(key=lambda r: (r["start"], r["end"]))
+    running = ZERO
+    for r in out:  # the cap runs over finished time in date order, calendar and agent together
+        if not r["upcoming"]:
+            running += r["hours"]
+            r["over_cap"] = bp.hours_cap is not None and running > bp.hours_cap
     return out
+
+
+def entry(bp, start, end, minutes, upcoming, overlap, *, rule, title, description, event_id=None, recurring=False,
+          agent=False):
+    hours = hours_for(minutes, bp.increment_minutes)
+    local = timezone.localtime(start)
+    return {
+        "event_id": event_id, "day": local.date(), "month": f"{local:%Y-%m}",
+        "start": local, "end": timezone.localtime(end), "title": title, "description": description,
+        "rule": rule, "hours": hours, "amount": hours * bp.rate_usd, "overlap": overlap, "over_cap": False,
+        "recurring": recurring, "upcoming": upcoming, "agent": agent,
+    }
 
 
 def month_rows(bp, rows):
@@ -222,6 +296,7 @@ def summary(bp, now=None):
     cap = bp.hours_cap
     return {
         "bp": bp, "rows": rows, "months": month_rows(bp, done), "hours": hours,
+        "agent_hours": sum((r["hours"] for r in done if r["agent"]), ZERO),
         "scheduled": sum((r["hours"] for r in rows if r["upcoming"]), ZERO), "amount": hours * bp.rate_usd,
         "hours_cap": cap, "remaining": None if cap is None else cap - hours,
         "pct": None if not cap else min(100, int(hours / cap * 100)),

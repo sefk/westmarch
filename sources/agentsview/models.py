@@ -47,6 +47,9 @@ class Session(models.Model):
     peak_context_tokens = models.BigIntegerField(null=True)
     estimated_cost_usd = models.DecimalField(max_digits=14, decimal_places=6, default=0)
     has_cost = models.BooleanField(default=False)  # false if any model was unpriced
+    # ISO times of prompts a human typed (typed, queued or accepted suggestion), for sessions under a
+    # billing project's agent_paths only. None = not fetched yet; the loader backfills those.
+    typed_prompts = models.JSONField(null=True, blank=True, default=None)
     raw = models.JSONField(default=dict)  # {"export": {...}, "list": {...}}
     loaded_at = models.DateTimeField(auto_now=True)
 

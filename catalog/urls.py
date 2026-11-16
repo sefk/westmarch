@@ -15,6 +15,7 @@ urlpatterns = [
     path("invoicing/", views.invoicing, name="invoicing"),
     path("invoicing/rescan/", views.rescan, name="rescan"),
     path("invoicing/note/", views.note, name="note"),
+    path("invoicing/notes/", views.notes, name="notes"),
     path("invoicing/<slug:slug>/<str:month>/", views.invoice, name="invoice"),
     path("body/", views.health, name="health"),
     path("body/data/", views.health_data, name="health_data"),

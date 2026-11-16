@@ -299,6 +299,12 @@ def notes_for(bp):
     return {n.day: n.text for n in bp.notes.all()}
 
 
+def note_choices(bp):
+    """The distinct descriptions already written, latest day first, to reuse on other days."""
+    texts = bp.notes.order_by("-day").values_list("text", flat=True)
+    return list(dict.fromkeys(texts))
+
+
 def lines(bp, rows, notes=None):
     """`rows` as billed lines: each calendar entry alone, agent stretches rolled up into one line per day
     (finished and upcoming ones apart) with the stretches kept as `parts`. A day with no billable time is left out."""
@@ -364,6 +370,7 @@ def summary(bp, now=None):
         "over": cap is not None and hours > cap,
         "warn": cap is not None and hours >= cap * WARN_AT,
         "overlaps": sum(1 for r in rows if r["overlap"]),
+        "note_choices": note_choices(bp),
     }
 
 

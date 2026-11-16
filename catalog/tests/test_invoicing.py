@@ -574,6 +574,50 @@ def test_saving_a_note_needs_the_csrf_token(abp):
     assert strict.post(reverse("catalog:note"), {"slug": "t", "day": "2026-11-16", "text": "x"}).status_code == 403
 
 
+def test_one_description_applies_to_every_ticked_day(abp, client):
+    from core.models import BillingNote
+    url = reverse("catalog:notes")
+    BillingNote.objects.create(billing_project=abp, day=date(2026, 11, 12), text="Old")
+    resp = client.post(url, {"slug": "t", "day": ["2026-11-12", "2026-11-13", "2026-11-13", "2026-11-16"],
+                             "text": "  API Keys   (website/142) "})
+    assert resp.status_code == 302 and resp.url == reverse("catalog:invoicing") + "#entries-t"
+    assert dict(BillingNote.objects.values_list("day", "text")) == {
+        date(2026, 11, d): "API Keys (website/142)" for d in (12, 13, 16)}  # replaced Old, no duplicates
+
+
+def test_bulk_describe_never_clears_and_needs_valid_input(abp, client):
+    from core.models import BillingNote
+    url = reverse("catalog:notes")
+    BillingNote.objects.create(billing_project=abp, day=date(2026, 11, 12), text="Keep")
+    client.post(url, {"slug": "t", "day": ["2026-11-12"], "text": " "})  # empty text
+    client.post(url, {"slug": "t", "text": "x"})  # nothing ticked
+    assert dict(BillingNote.objects.values_list("day", "text")) == {date(2026, 11, 12): "Keep"}
+    assert client.post(url, {"slug": "t", "day": ["2026-11-12", "nope"], "text": "x"}).status_code == 404
+    assert client.post(url, {"slug": "zzz", "day": "2026-11-12", "text": "x"}).status_code == 404
+    assert client.get(url).status_code == 405
+    from django.test import Client
+    assert Client(enforce_csrf_checks=True).post(url, {"slug": "t", "day": "2026-11-12", "text": "x"}).status_code == 403
+
+
+def test_page_offers_ticking_days_and_reusing_descriptions(abp, client):
+    from core.models import BillingNote
+    agent_session("11-13", ["09:00", "09:10"])
+    agent_session("11-16", ["07:52", "07:53", "08:03"])
+    BillingNote.objects.create(billing_project=abp, day=date(2026, 11, 13), text="API Keys (website/142)")
+    page = client.get(reverse("catalog:invoicing")).content.decode()
+    assert page.count('type="checkbox" class="pick"') == 2 and 'form="bulk-t"' in page
+    assert '<option value="API Keys (website/142)">' in page
+    assert page.count(" data-undescribed ") == 1  # only Nov 16 is undescribed
+    assert page.count("<script>") == 1
+
+
+def test_note_choices_are_distinct_and_latest_first(abp):
+    from core.models import BillingNote
+    for d, t in [(10, "A"), (11, "B"), (12, "A")]:
+        BillingNote.objects.create(billing_project=abp, day=date(2026, 11, d), text=t)
+    assert inv.note_choices(abp) == ["A", "B"]
+
+
 def test_invoicing_page_title_and_script_placement(abp, client):
     page = client.get(reverse("catalog:invoicing")).content.decode()
     assert "<title>Invoicing" in page and "<script>" not in page.split("</title>")[0]

@@ -410,7 +410,8 @@ always-on host, replacing studio, is open.
   prompt times (for those sessions), never their text.
 - Agent time is shown and invoiced as one line per day, described by a note
   I write by hand (`core.BillingNote`); opening the day shows every stretch
-  and its arithmetic. Meetings stay one line each.
+  and its arithmetic. Meetings stay one line each. One description can be
+  applied to many ticked days at once, since the same work usually spans days.
 
 [agentsview]: https://github.com/agentsview
 [luc]: ../../llm-use-charts

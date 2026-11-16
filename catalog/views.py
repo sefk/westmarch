@@ -194,6 +194,22 @@ def note(request):
     return redirect(f"{reverse('catalog:invoicing')}#day-{bp.slug}-{day:%Y-%m-%d}")
 
 
+@require_POST
+@csrf_protect
+def notes(request):
+    """Give the same description to every ticked day of development work."""
+    bp = get_object_or_404(BillingProject, slug=request.POST.get("slug", ""))
+    try:
+        days = {date.fromisoformat(d) for d in request.POST.getlist("day")}
+    except ValueError:
+        raise Http404("bad day") from None
+    text = " ".join(request.POST.get("text", "").split())[:BillingNote._meta.get_field("text").max_length]
+    if days and text:  # clearing stays a one-day action, so an empty box can't wipe a selection
+        for day in days:
+            BillingNote.objects.update_or_create(billing_project=bp, day=day, defaults={"text": text})
+    return redirect(f"{reverse('catalog:invoicing')}#entries-{bp.slug}")
+
+
 def invoice(request, slug, month):
     bp = get_object_or_404(BillingProject, slug=slug)
     data = inv.invoice(bp, month)

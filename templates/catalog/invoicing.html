@@ -30,6 +30,11 @@ details summary { cursor: pointer; }
 .note { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .note input { font: inherit; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink); max-width: 100%; }
 .note button { font: inherit; padding: 0.25rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--page); color: var(--ink); cursor: pointer; }
+.bulk { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0; font-size: 0.85rem; }
+.bulk input[type=text] { font: inherit; padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--ink); flex: 1 1 18rem; max-width: 30rem; }
+.bulk button { font: inherit; padding: 0.25rem 0.8rem; border: 1px solid var(--border); border-radius: 6px; background: var(--page); color: var(--ink); cursor: pointer; }
+.bulk button:disabled { opacity: 0.5; cursor: default; }
+td.pick, th.pick { width: 1.5rem; padding-right: 0; }
 h2 + .sub { font-size: 0.8rem; color: var(--muted); margin: 0.15rem 0 0.5rem; }
 </style>
 {% endblock %}
@@ -108,18 +113,31 @@ spent typing prompts to AI agents.</p>
   </table>
   </div>
 
-  <h2 style="margin-top: 1rem">Entries</h2>
+  <h2 style="margin-top: 1rem" id="entries-{{ p.bp.slug }}">Entries</h2>
   <p class="sub">Each rounds to the nearest {{ p.bp.increment_minutes }} minutes.
     {% if p.overlaps %}{{ p.overlaps }} overlapped an earlier entry or the calendar, so shared time counts once.{% endif %}
     Only events that have ended are billed.
     {% if p.bp.use_agent_activity %}Agent time is rolled up to one line a day (tagged <span class="tag">agent</span>);
     open a day to see each stretch and its arithmetic, and to write what the work was.{% endif %}</p>
+  {% if p.bp.use_agent_activity %}
+  <form method="post" action="{% url 'catalog:notes' %}" class="bulk" id="bulk-{{ p.bp.slug }}">{% csrf_token %}
+    <input type="hidden" name="slug" value="{{ p.bp.slug }}">
+    <span><span data-count>0</span> days ticked</span>
+    <button type="button" data-pick="undescribed">Tick undescribed</button>
+    <button type="button" data-pick="none">Untick all</button>
+    <input type="text" name="text" list="notes-{{ p.bp.slug }}" maxlength="300" autocomplete="off"
+           placeholder="Describe the ticked days, e.g. API Keys (website/142)">
+    <button type="submit" disabled>Apply to ticked days</button>
+    <datalist id="notes-{{ p.bp.slug }}">{% for t in p.note_choices %}<option value="{{ t }}">{% endfor %}</datalist>
+  </form>
+  {% endif %}
   <div class="scroll">
   <table class="data">
-    <thead><tr><th>Date</th><th>Time</th><th class="text">What</th><th class="text">Matched</th><th>Hours</th></tr></thead>
+    <thead><tr><th class="pick"></th><th>Date</th><th>Time</th><th class="text">What</th><th class="text">Matched</th><th>Hours</th></tr></thead>
     <tbody>
     {% for r in p.lines %}
       <tr class="{% if r.upcoming %}upcoming{% elif r.over_cap %}over{% elif not r.hours %}zero{% endif %}">
+        <td class="pick">{% if r.parts %}<input type="checkbox" class="pick" name="day" value="{{ r.day|date:'Y-m-d' }}" form="bulk-{{ p.bp.slug }}"{% if not r.note %} data-undescribed{% endif %} aria-label="Tick {{ r.day|date:'M j' }}">{% endif %}</td>
         <td>{{ r.day|date:"D M j" }}</td><td>{{ r.start|date:"g:i" }}-{{ r.end|date:"g:i A" }}</td>
         <td class="text">
           {% if r.parts %}
@@ -154,7 +172,7 @@ spent typing prompts to AI agents.</p>
         <td>{{ r.hours|floatformat:2 }}</td>
       </tr>
     {% empty %}
-      <tr><td colspan="5" class="text muted">No billable events in the term yet.</td></tr>
+      <tr><td colspan="6" class="text muted">No billable events in the term yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>
@@ -166,5 +184,32 @@ spent typing prompts to AI agents.</p>
 <script>
 // after saving a note, land with that day open
 document.querySelectorAll('details[id^="day-"]').forEach(function (d) { if (location.hash === '#' + d.id) d.open = true; });
+// bulk describe: tick days (shift-click for a range), type one description, apply to all of them
+document.querySelectorAll('form.bulk').forEach(function (form) {
+  var boxes = Array.from(document.querySelectorAll('input.pick[form="' + form.id + '"]'));
+  var text = form.querySelector('input[name=text]'), go = form.querySelector('button[type=submit]'), last = null;
+  function sync() {
+    var n = new Set(boxes.filter(function (b) { return b.checked; }).map(function (b) { return b.value; })).size;
+    form.querySelector('[data-count]').textContent = n;
+    go.disabled = !(n && text.value.trim());
+  }
+  boxes.forEach(function (b, i) {
+    b.addEventListener('click', function (e) {
+      if (e.shiftKey && last !== null) {
+        var lo = Math.min(i, last), hi = Math.max(i, last);
+        for (var k = lo; k <= hi; k++) boxes[k].checked = b.checked;
+      }
+      last = i; sync();
+    });
+  });
+  form.querySelectorAll('[data-pick]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      boxes.forEach(function (b) { b.checked = btn.dataset.pick === 'undescribed' && b.hasAttribute('data-undescribed'); });
+      sync();
+    });
+  });
+  text.addEventListener('input', sync);
+  sync();
+});
 </script>
 {% endblock %}

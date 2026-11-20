@@ -44,6 +44,8 @@ uv run manage.py load --all --full # ignore incremental cursors, reload everythi
 | imessage | the Messages database, read-only | hourly |
 | gmail | full mailbox mirror: raw messages on the external SSD, headers in SQLite, read-only | hourly |
 | mailindex | full-text index of mail bodies and attachments; OCR on the local model | hourly |
+| maildigest | a local model's summary of each thread I wrote in | hourly |
+| mailvec | embeddings of personal mail, attachments and digests, for search by meaning | hourly |
 | photos | Photos library metadata via osxphotos: dates, places, named people, albums, labels; never pixels | daily |
 | health | not a loader: Apple Health pushed to `/ingest/health/` by Health Auto Export | on push |
 | location | not a loader: GPS points pushed to `/ingest/location/` by Overland | on push |
@@ -162,9 +164,10 @@ can be rebuilt.
   macOS `textutil`, text, CSV, HTML, attached emails) are read in worker
   processes with ordinary libraries.
 - **Images and scanned PDFs** (first five pages) go to the local model for
-  OCR, `MAILINDEX_OCR_URL` / `MAILINDEX_OCR_MODEL` (default ds4 and
-  `qwen3.8-flash-next`). A non-loopback URL is refused, so mail never
-  leaves this machine. Images with no text get a one-line description.
+  OCR, `MAILINDEX_OCR_URL` / `MAILINDEX_OCR_MODEL` (default
+  `LOCAL_LLM_URL` / `LOCAL_LLM_MODEL`: LM Studio on `127.0.0.1:1234` with
+  `qwen/qwen3.6-35b-a3b`; ds4 is `http://127.0.0.1:8765/v1`). A
+  non-loopback URL is refused, so mail never leaves this machine. Images with no text get a one-line description.
   Tiny images (logos, spacers) are skipped. If the server is down the OCR
   pass stops and the next run retries; a file that fails three times is
   marked `error`.
@@ -182,6 +185,62 @@ uv run manage.py mailindex --no-ocr --budget-minutes 0   # all text, no OCR
 uv run manage.py mailindex --budget-minutes 0            # then OCR until done
 uv run manage.py mailsearch quarterly invoice            # try it
 ```
+
+### Thread digests and search by meaning (`maildigest`, `mailvec`)
+
+Keyword search misses mail that says the same thing in other words, and a
+small agent reading raw threads burns its context. Two more loaders, run
+after `mailindex`, add a layer on top. Both use only the local model
+server (loopback only, like OCR), so mail never leaves the machine.
+
+- **`maildigest`** sends every thread I wrote in (about 21,600) to
+  `MAILDIGEST_MODEL` and stores its JSON reply in `ThreadDigest`: a short
+  summary, a topic, people, organisations, dates, amounts, commitments,
+  anything left open, and search keywords. Each message's own words go in,
+  with quoted copies of earlier mail cut off; long threads keep the first
+  message and the newest that fit in `MAILDIGEST_MAX_CHARS`. A thread that
+  gets new mail is digested again. There is one row per thread per model,
+  so changing the model starts a fresh set and keeps the old one.
+  Measured on the 64 GB Studio with `qwen/qwen3.6-35b-a3b`: about 7 s a
+  thread, so roughly two days for the backfill.
+- **`mailvec`** embeds personal mail with `MAILVEC_MODEL` (default
+  `text-embedding-nomic-embed-text-v1.5` in LM Studio). It covers each
+  message's own words in chunks of about 1,500 characters, each
+  attachment's text, and each digest. "Personal" (`MAILVEC_SCOPE`, the
+  default) means threads I wrote in plus mail outside Gmail's bulk tabs
+  and mailing lists, about a fifth of the mailbox; `all` adds the rest.
+  Vectors go into a separate SQLite file per embedding model,
+  `$MAILINDEX_VEC_DIR/vec-<model>.sqlite3` (default
+  `$WESTMARCH_RAW_DIR/mailindex/`), using [sqlite-vec][sqlite-vec]. It is
+  rebuildable, so it stays out of `db.sqlite3` and its daily backup. The
+  loader records the file, model and server in LoaderState, which is where
+  Samwise finds them.
+
+Search with `mailsearch --meaning`: threads ranked by keywords and meaning
+together (reciprocal rank fusion), each marked with how it matched.
+
+Backfill by hand, then switch on the hourly runs (15 minutes each,
+`MAILDIGEST_RUN_SECONDS`, `MAILVEC_RUN_SECONDS`):
+
+```sh
+uv run manage.py maildigest --limit 20                # trial
+uv run manage.py maildigest --budget-minutes 0        # all my threads (~2 days)
+uv run manage.py mailvec --budget-minutes 0           # personal mail, attachments, digests
+uv run manage.py mailsearch --meaning that leak under the kitchen sink
+# then MAILDIGEST_ENABLED=1 and MAILVEC_ENABLED=1 in .env
+```
+
+**Comparing models.** Set `MAILDIGEST_MODEL` to the new model and run the
+backfill again; the old digests stay. Then:
+
+```sh
+uv run manage.py maildigest --stats                       # per model: threads, failures, seconds, tokens
+uv run manage.py maildigest --compare OLD NEW --sample 10 # side by side
+uv run manage.py maildigest --thread <thread_id> --model NEW   # one thread, printed
+```
+
+A new `MAILVEC_MODEL` gets its own store file; search uses whichever
+`MAILVEC_MODEL` names, so switching back is a one-line change.
 
 ### iMessage
 
@@ -394,3 +453,4 @@ uv run pytest -q
 [takeout]: https://takeout.google.com/
 [overland]: https://overland.p3k.app/
 [osxphotos]: https://github.com/RhetTbull/osxphotos
+[sqlite-vec]: https://github.com/asg017/sqlite-vec

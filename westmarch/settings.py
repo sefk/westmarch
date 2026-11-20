@@ -60,6 +60,8 @@ LOADERS = [
     # and nothing else should wait behind it.
     "sources.google.loader.GmailLoader",
     "mailindex.loader.MailIndexLoader",  # text of what gmail just stored
+    "mailindex.digest.MailDigestLoader",  # thread summaries, from that text
+    "mailindex.vecloader.MailVecLoader",  # embeddings of text and summaries
 ]
 
 MIDDLEWARE = [
@@ -173,10 +175,30 @@ IMESSAGE_DB = Path(os.environ["IMESSAGE_DB"]) if os.environ.get("IMESSAGE_DB") e
 # backfill is `manage.py mailindex --budget-minutes 0`; hourly runs are off
 # until MAILINDEX_ENABLED=1.
 MAILINDEX_ENABLED = os.environ.get("MAILINDEX_ENABLED", "") == "1"
-MAILINDEX_OCR_URL = os.environ.get("MAILINDEX_OCR_URL", "http://127.0.0.1:8765/v1")
-MAILINDEX_OCR_MODEL = os.environ.get("MAILINDEX_OCR_MODEL", "qwen3.8-flash-next")
+# The local model server every mail pass uses unless told otherwise. The
+# default is LM Studio; ds4 is http://127.0.0.1:8765/v1.
+LOCAL_LLM_URL = os.environ.get("LOCAL_LLM_URL", "http://127.0.0.1:1234/v1")
+LOCAL_LLM_MODEL = os.environ.get("LOCAL_LLM_MODEL", "qwen/qwen3.6-35b-a3b")
+MAILINDEX_OCR_URL = os.environ.get("MAILINDEX_OCR_URL") or LOCAL_LLM_URL
+MAILINDEX_OCR_MODEL = os.environ.get("MAILINDEX_OCR_MODEL") or LOCAL_LLM_MODEL
 MAILINDEX_RUN_SECONDS = int(os.environ.get("MAILINDEX_RUN_SECONDS", str(20 * 60)))
 MAILINDEX_WORKERS = int(os.environ.get("MAILINDEX_WORKERS", str(max((os.cpu_count() or 4) - 2, 1))))
+
+# maildigest: a local model's summary of each thread I wrote in
+# (ThreadDigest). mailvec: embeddings of personal mail, attachments and
+# digests, one file per embedding model under MAILINDEX_VEC_DIR. Both are
+# time-boxed hourly once enabled; backfill by hand first (README).
+MAILDIGEST_ENABLED = os.environ.get("MAILDIGEST_ENABLED", "") == "1"
+MAILDIGEST_URL = os.environ.get("MAILDIGEST_URL") or LOCAL_LLM_URL
+MAILDIGEST_MODEL = os.environ.get("MAILDIGEST_MODEL") or LOCAL_LLM_MODEL
+MAILDIGEST_RUN_SECONDS = int(os.environ.get("MAILDIGEST_RUN_SECONDS", str(15 * 60)))
+MAILDIGEST_MAX_CHARS = int(os.environ.get("MAILDIGEST_MAX_CHARS", "24000"))  # thread text sent per digest
+MAILVEC_ENABLED = os.environ.get("MAILVEC_ENABLED", "") == "1"
+MAILVEC_URL = os.environ.get("MAILVEC_URL") or LOCAL_LLM_URL
+MAILVEC_MODEL = os.environ.get("MAILVEC_MODEL", "text-embedding-nomic-embed-text-v1.5")
+MAILVEC_RUN_SECONDS = int(os.environ.get("MAILVEC_RUN_SECONDS", str(15 * 60)))
+MAILVEC_SCOPE = os.environ.get("MAILVEC_SCOPE", "personal")  # personal | all
+MAILINDEX_VEC_DIR = Path(os.environ.get("MAILINDEX_VEC_DIR") or RAW_DIR / "mailindex")
 
 # Apple Health: Health Auto Export POSTs to /ingest/health/ with this
 # token in the `X-Ingest-Token` header. Blank disables the endpoint.

@@ -1,6 +1,6 @@
-"""OCR through the local model (ds4 by default; any OpenAI-compatible
-server on this machine). Mail never leaves the machine: a non-loopback
-URL is refused outright.
+"""OCR through the local model (settings.LOCAL_LLM_URL; any
+OpenAI-compatible server on this machine). Mail never leaves the machine:
+a non-loopback URL is refused outright.
 """
 
 from __future__ import annotations
@@ -8,11 +8,12 @@ from __future__ import annotations
 import base64
 import io
 import re
-from urllib.parse import urlparse
 
 import requests
 
-LOOPBACK = {"127.0.0.1", "localhost", "::1"}
+from .llm import LlmUnavailable
+from .llm import check_local as _check_local
+
 MAX_SIDE = 1600  # px; larger images are scaled down before sending
 
 PROMPT = (
@@ -22,15 +23,15 @@ PROMPT = (
 )
 
 
-class OcrUnavailable(Exception):
+class OcrUnavailable(LlmUnavailable):
     """The model server is down or misconfigured; stop the OCR pass."""
 
 
 def check_local(url: str) -> str:
-    host = urlparse(url).hostname or ""
-    if host not in LOOPBACK:
-        raise OcrUnavailable(f"refusing non-local OCR server {url!r}; mail stays on this machine")
-    return url.rstrip("/")
+    try:
+        return _check_local(url)
+    except LlmUnavailable as exc:
+        raise OcrUnavailable(str(exc)) from None
 
 
 def png_b64(img) -> str:

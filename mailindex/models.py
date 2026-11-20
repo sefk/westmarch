@@ -37,6 +37,33 @@ class AttachmentBlob(models.Model):
     extracted_at = models.DateTimeField(auto_now=True)
 
 
+class ThreadDigest(models.Model):
+    """A local model's index entry for one thread I wrote in: a summary and
+    the people, dates, amounts and commitments in it (see digest.py). One
+    row per thread per model, so a better model's digests sit beside an
+    older one's for comparison. Rewritten when the thread gets new mail."""
+
+    thread_id = models.CharField(max_length=32, db_index=True)
+    model = models.CharField(max_length=200)
+    prompt_version = models.CharField(max_length=20)
+    message_count = models.IntegerField()
+    last_message_at = models.DateTimeField(null=True)  # newest message the digest saw
+    summary = models.TextField(blank=True)
+    topic = models.CharField(max_length=40, blank=True)
+    digest = models.JSONField(default=dict)  # the model's whole JSON reply
+    error = models.TextField(blank=True)
+    attempts = models.IntegerField(default=0)
+    input_chars = models.IntegerField(default=0)
+    prompt_tokens = models.IntegerField(default=0)
+    completion_tokens = models.IntegerField(default=0)
+    seconds = models.FloatField(default=0)
+    created = models.DateTimeField(auto_now_add=True)
+    updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["thread_id", "model"], name="uniq_thread_digest")]
+
+
 class MailAttachment(models.Model):
     message = models.ForeignKey(GmailMessage, on_delete=models.CASCADE, related_name="attachments")
     part = models.IntegerField()  # position among the message's attachments

@@ -230,17 +230,47 @@ uv run manage.py mailsearch --meaning that leak under the kitchen sink
 # then MAILDIGEST_ENABLED=1 and MAILVEC_ENABLED=1 in .env
 ```
 
-**Comparing models.** Set `MAILDIGEST_MODEL` to the new model and run the
-backfill again; the old digests stay. Then:
+**Comparing models** (e.g. after moving to a bigger machine). Nothing is
+overwritten: digests are stored per model and embeddings get a file per
+model, so the old model's results stay for comparison.
 
-```sh
-uv run manage.py maildigest --stats                       # per model: threads, failures, seconds, tokens
-uv run manage.py maildigest --compare OLD NEW --sample 10 # side by side
-uv run manage.py maildigest --thread <thread_id> --model NEW   # one thread, printed
-```
+1. Load the new models in LM Studio and note their exact ids
+   (`curl -s localhost:1234/v1/models`).
+2. Try the new digest model on a few threads before committing to a
+   full run:
 
-A new `MAILVEC_MODEL` gets its own store file; search uses whichever
-`MAILVEC_MODEL` names, so switching back is a one-line change.
+   ```sh
+   uv run manage.py maildigest --model NEW --limit 20
+   uv run manage.py maildigest --compare OLD NEW --sample 10   # the same threads, side by side
+   uv run manage.py maildigest --thread <thread_id> --model NEW # one thread, printed
+   ```
+
+3. If it's better, set `MAILDIGEST_MODEL=NEW` in `.env` and backfill
+   (`maildigest --budget-minutes 0`), or leave the hourly runs to work
+   through it.
+4. Compare the runs: `maildigest --stats` gives each model's thread count,
+   failures, seconds per thread and tokens; `--compare OLD NEW --sample 30`
+   shows more threads side by side.
+5. For a new embedding model, set `MAILVEC_MODEL=NEW` and run `mailvec
+   --budget-minutes 0`; it builds `vec-<new>.sqlite3` beside the old file.
+   `mailsearch --meaning` reads the store `MAILVEC_MODEL` names, so the two
+   can be compared query by query:
+
+   ```sh
+   MAILVEC_MODEL=OLD uv run manage.py mailsearch --meaning that leak under the kitchen sink
+   MAILVEC_MODEL=NEW uv run manage.py mailsearch --meaning that leak under the kitchen sink
+   ```
+
+Things to know:
+
+- `mailvec` embeds the digests of whichever model `MAILDIGEST_MODEL`
+  names. If you change the digest model but keep the embedder, both
+  models' summaries end up in the same store. Either rebuild it (delete
+  the file and rerun `mailvec`) or switch the embedder at the same time.
+- Samwise doesn't read `.env`: it uses the store and digest model recorded
+  by the last `mailvec` and `maildigest` runs (in LoaderState). It
+  switches over after the first hourly run with the new settings.
+- Switching back is the same one-line change in `.env`.
 
 ### iMessage
 

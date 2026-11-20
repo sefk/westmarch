@@ -23,6 +23,7 @@ from django.db import connection
 
 from core.loaders import Disabled, Loader
 from sources.google.loader import gmail_root
+from sources.google.models import GmailMessage
 
 from .chunks import MY_THREADS, NOT_NEVER, PERSONAL, chunk, own_text
 from .digest import digest_text, file_lock
@@ -64,6 +65,7 @@ class MailVecLoader(Loader):
             self.store = VecStore(path, self.model)
             self.doc_prefix = self.store.meta("doc_prefix", "")
             try:
+                self.prune()
                 for step in (self.digest_pass, self.body_pass, self.attachment_pass):
                     if self.out_of_time():
                         break
@@ -128,6 +130,26 @@ class MailVecLoader(Loader):
     def _scope_sql(self) -> str:
         return PERSONAL if self.scope == "personal" else "1"
 
+    # -- pruning --
+
+    def prune(self):
+        """Forget what was embedded from mail since deleted or moved to Spam or
+        Trash. An attachment is forgotten too, so the next pass ties it to a
+        message still in scope (if any); restored mail is embedded again."""
+        with connection.cursor() as c:
+            c.execute(f"SELECT m.id FROM src_google_gmailmessage m"
+                      f" WHERE m.deleted_at IS NOT NULL OR NOT {NOT_NEVER}")
+            gone = {r[0] for r in c.fetchall()}
+        pruned = 0
+        for kind in ("body", "att"):
+            for mid, refs in self.store.refs_by_message(kind).items():
+                if mid in gone:
+                    for ref in refs:
+                        self.store.forget(kind, ref)
+                        pruned += 1
+        self.store.commit()
+        self.counts["pruned"] = pruned
+
     # -- pass 1: digests --
 
     def digest_pass(self, client):
@@ -187,28 +209,31 @@ class MailVecLoader(Loader):
         with connection.cursor() as c:
             c.execute(f"""
                 WITH my_threads AS ({MY_THREADS})
-                SELECT a.blob_id, MAX(m.internal_date) FROM mailindex_mailattachment a
+                SELECT a.blob_id, MAX(m.internal_date), m.id FROM mailindex_mailattachment a
                 JOIN src_google_gmailmessage m ON m.id = a.message_id
                 JOIN mailindex_attachmentblob ab ON ab.id = a.blob_id
                 WHERE ab.status = 'text' AND ab.text != '' AND m.deleted_at IS NULL AND {NOT_NEVER}
                   AND {self._scope_sql()}
                 GROUP BY a.blob_id ORDER BY MAX(m.internal_date) DESC""")
-            todo = [r[0] for r in c.fetchall() if r[0] not in done]
+            # m.id is the row MAX() picked: the newest in-scope message carrying
+            # the file. The same bytes can sit in many threads; the chunk belongs
+            # to that message, not to whichever one the text was extracted from.
+            todo = [(r[0], r[2]) for r in c.fetchall() if r[0] not in done]
         self.counts["attachments_left_at_start"] = len(todo)
 
         def items():
             for start in range(0, len(todo), 100):
-                ids = todo[start:start + 100]
-                blobs = AttachmentBlob.objects.filter(id__in=ids).select_related("source_message")
-                by_id = {b.id: b for b in blobs}
-                names = dict(MailAttachment.objects.filter(blob_id__in=ids)
-                             .values_list("blob_id", "filename"))
-                for bid in ids:
-                    b = by_id.get(bid)
-                    if b is None:
+                part = todo[start:start + 100]
+                ids = [bid for bid, _ in part]
+                by_id = {b.id: b for b in AttachmentBlob.objects.filter(id__in=ids)}
+                msgs = GmailMessage.objects.in_bulk([mid for _, mid in part])
+                names = {(a, m): f for a, m, f in MailAttachment.objects.filter(blob_id__in=ids)
+                         .values_list("blob_id", "message_id", "filename")}
+                for bid, mid in part:
+                    b, m = by_id.get(bid), msgs.get(mid)
+                    if b is None or m is None:
                         continue
-                    m = b.source_message
-                    head = f"Attachment: {names.get(bid) or '(unnamed)'}\nIn email: {m.subject}\n\n"
+                    head = f"Attachment: {names.get((bid, mid)) or '(unnamed)'}\nIn email: {m.subject}\n\n"
                     cs = [dict(seq=i, thread_id=m.thread_id, message_id=m.id, day=day_of(m.internal_date),
                                text=piece, embed=self.doc_prefix + head + piece)
                           for i, piece in enumerate(chunk(b.text, max_chunks=ATTACHMENT_CHUNKS))]

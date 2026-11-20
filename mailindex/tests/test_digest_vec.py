@@ -166,6 +166,12 @@ def test_digest_failures_retry_then_stop(mailbox):
     assert bad.attempts == 3 and "no JSON" in bad.error
     assert pending_threads(DIGEST) == []
 
+    # New mail in the thread gives it a fresh set of tries.
+    msg(mailbox, 9, "all sorted now", thread="t-boom", minute=50)
+    assert [t for t, _, _ in pending_threads(DIGEST)] == ["t-boom"]
+    MailDigestLoader(budget_seconds=0, client=FakeLlm(), enabled=True).load()
+    assert ThreadDigest.objects.get(thread_id="t-boom").attempts == 1
+
 
 def test_digest_server_down_and_switch(settings, mailbox):
     MailDigestLoader(budget_seconds=0, client=FakeLlm(down=True), enabled=True).load()
@@ -213,6 +219,36 @@ def test_vec_embeds_personal_mail_digests_and_attachments(settings, mailbox):
     MailVecLoader(budget_seconds=0, client=again, enabled=True).load()
     assert len(again.embedded) == 1 and "chimney repair" in again.embedded[0]
     assert VecStore(store.path, readonly=True).counts()["chunks_digest"] == 1
+
+
+def test_vec_forgets_deleted_and_trashed_mail(settings, mailbox):
+    from django.utils import timezone
+
+    from sources.google.models import GmailMessage
+
+    MailVecLoader(budget_seconds=0, client=FakeLlm(), enabled=True).load()
+    path = store_path(settings.MAILINDEX_VEC_DIR, EMBED)
+    assert VecStore(path, readonly=True).counts()["done_body"] == 3
+    GmailMessage.objects.filter(thread_id="t-roof", label_ids=[]).update(deleted_at=timezone.now())
+    friend = GmailMessage.objects.get(thread_id="t-friend")
+    friend.label_ids = ["TRASH"]
+    friend.save()
+    MailVecLoader(budget_seconds=0, client=FakeLlm(), enabled=True).load()
+    counts = VecStore(path, readonly=True).counts()
+    assert counts["done_body"] == 1 and "done_att" not in counts  # the map was only in the trashed mail
+    assert LoaderState.get("mailvec", "pruned") == "3"
+    assert [h["thread_id"] for h in meaning("birdwatching chimney", k=10, client=FakeLlm())] == ["t-roof"]
+
+
+def test_attachment_belongs_to_the_message_in_scope(settings, root):
+    pdf = text_pdf("lighthouse tickets")
+    msg(root, 1, "promo", thread="t-promo", labels=["CATEGORY_PROMOTIONS"], attachments=[
+        ("a.pdf", "application", "pdf", pdf)])
+    msg(root, 2, "for you", thread="t-mine", sent=True, attachments=[("a.pdf", "application", "pdf", pdf)])
+    MailIndexLoader(budget_seconds=0, workers=0, ocr=False, enabled=True).load()
+    MailVecLoader(budget_seconds=0, client=FakeLlm(), enabled=True).load()
+    hit = meaning("lighthouse tickets", k=1, client=FakeLlm())[0]
+    assert hit["kind"] == "att" and hit["thread_id"] == "t-mine"  # not the promo it was first extracted from
 
 
 def test_vec_scope_all_and_refused_text(settings, mailbox):

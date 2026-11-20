@@ -139,6 +139,23 @@ class VecStore:
                              (cid, sqlite_vec.serialize_float32(vec), c.get("day", 0)))
         self.con.execute("INSERT OR REPLACE INTO done (kind, ref, stamp) VALUES (?, ?, ?)", (kind, ref, stamp))
 
+    def forget(self, kind: str, ref: int):
+        """Drop an item's chunks and its done row, as if never embedded. No commit."""
+        old = [r[0] for r in self.con.execute("SELECT id FROM chunk WHERE kind = ? AND ref = ?", (kind, ref))]
+        if old:
+            marks = ",".join("?" * len(old))
+            self.con.execute(f"DELETE FROM vec_chunk WHERE rowid IN ({marks})", old)
+            self.con.execute(f"DELETE FROM chunk WHERE id IN ({marks})", old)
+        self.con.execute("DELETE FROM done WHERE kind = ? AND ref = ?", (kind, ref))
+
+    def refs_by_message(self, kind: str) -> dict[int, set[int]]:
+        """message_id -> refs of `kind` whose chunks belong to that message."""
+        out: dict[int, set[int]] = {}
+        for ref, mid in self.con.execute(
+                "SELECT DISTINCT ref, message_id FROM chunk WHERE kind = ? AND message_id IS NOT NULL", (kind,)):
+            out.setdefault(mid, set()).add(ref)
+        return out
+
     def commit(self):
         self.con.commit()
 

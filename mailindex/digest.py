@@ -158,9 +158,9 @@ def pending_threads(model: str) -> list[tuple[str, int, object]]:
             out.append((thread_id, count, last))
             continue
         seen_last, err, attempts = seen
-        if err and attempts < MAX_ATTEMPTS:
-            out.append((thread_id, count, last))
-        elif not err and last and (seen_last is None or last > seen_last):
+        newer = bool(last and (seen_last is None or last > seen_last))
+        # New mail always earns another go, even after failures.
+        if newer or (err and attempts < MAX_ATTEMPTS):
             out.append((thread_id, count, last))
     return out
 
@@ -237,6 +237,8 @@ class MailDigestLoader(Loader):
             text = render_thread(messages, mine, settings.MAILDIGEST_MAX_CHARS)
             row = ThreadDigest.objects.filter(thread_id=thread_id, model=self.model).first() or ThreadDigest(
                 thread_id=thread_id, model=self.model)
+            if row.last_message_at != last:  # the thread changed: earlier failures don't count
+                row.attempts = 0
             row.prompt_version, row.message_count, row.last_message_at = PROMPT_VERSION, len(messages), last
             row.input_chars, row.attempts = len(text), row.attempts + 1
             started = time.monotonic()

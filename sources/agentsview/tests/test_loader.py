@@ -113,7 +113,9 @@ def test_run_cli_needs_resync_says_how_to_fix(monkeypatch):
     with pytest.raises(RuntimeError) as exc:
         mod.run_cli(["export", "sessions"])
     text = str(exc.value)
-    assert text.startswith("agentsview archive needs upgrading: run `agentsview daemon restart`")
+    assert text.startswith("agentsview archive needs resync")
+    assert "agentsview doctor sync" in text
+    assert "agentsview daemon restart" in text
     assert "needs resync" in text
 
 

@@ -72,8 +72,14 @@ def run_cli(args: list[str]) -> dict:
     proc = subprocess.run([find_binary(), *args], capture_output=True, text=True, timeout=300)
     if proc.returncode:
         msg = f"agentsview {' '.join(args[:2])} exit {proc.returncode}: {proc.stderr[-500:]}"
-        if "needs resync" in proc.stderr:  # new agentsview version; only a writable daemon can upgrade the archive
-            msg = f"agentsview archive needs upgrading: run `agentsview daemon restart`. {msg}"
+        if "needs resync" in proc.stderr:
+            # After an upgrade the daemon re-parses every session; reads fail until all are current.
+            # One it can't re-parse (e.g. a Codex fork whose parent is gone) blocks reads for good.
+            msg = (
+                "agentsview archive needs resync: if the daemon is already on the new version, "
+                "`agentsview doctor sync` shows sessions stuck on an old data version and "
+                "~/.agentsview/debug.log says why; otherwise run `agentsview daemon restart`. " + msg
+            )
         raise RuntimeError(msg)
     return json.loads(proc.stdout)
 

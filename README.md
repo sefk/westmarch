@@ -31,7 +31,7 @@ uv run manage.py load --all --full # ignore incremental cursors, reload everythi
 |--------|--------|---------|
 | projects | git checkouts under `~/src` plus friendly names from local-redirector | daily |
 | gitlocal | commits in those checkouts | daily |
-| agentsview | AI coding sessions, per-model tokens and cost, via the agentsview CLI (`export sessions` + `session list`); subagents are their own rows; for sessions under a billing project's `agent_paths` it also reads the times you typed prompts (`session messages`), which invoicing uses; after an agentsview upgrade it fails with "archive needs upgrading" until `agentsview daemon restart` | hourly |
+| agentsview | AI coding sessions, per-model tokens and cost, via the agentsview CLI (`export sessions` + `session list`); subagents are their own rows; for sessions under a billing project's `agent_paths` it also reads the times you typed prompts (`session messages`), which invoicing uses; after an agentsview upgrade it fails with "archive needs resync" until the daemon has re-parsed every session: restart it if it's still on the old version, otherwise `agentsview doctor sync` names any session stuck on an old data version (prune it with the daemon stopped) | hourly |
 | claude_limits | Claude subscription rate-limit windows, via the Claude Code OAuth token in the Keychain (read-only, never refreshed) | hourly |
 | openrouter_limits | OpenRouter credits and budgets | hourly |
 | codex_limits | Codex weekly limit, read from the CLI's local session logs | hourly |
